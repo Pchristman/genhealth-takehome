@@ -132,7 +132,11 @@ def read_order(order_id: UUID, who: Auth, db: Db) -> OrderOut:
 
 
 def _record_corrections(db: Session, who: Principal, order: Order, fields: set[str]) -> None:
-    """A person's edit settles that field's flags. Read before flushing: history ends there."""
+    """A person's edit settles that field's flags.
+
+    Call it after the last change to the Order. Its queries flush, which ends the history it reads
+    and writes the Order: a change made after that would be a second UPDATE.
+    """
     state = inspect(order).attrs
     changed = [field for field in fields if state[field].history.has_changes()]
     now = utcnow()
@@ -168,9 +172,9 @@ def update_order(order_id: UUID, body: OrderPatch, who: Auth, db: Db) -> OrderOu
         order.status = OrderStatus.needs_review
         order.reviewed_by = None
         order.reviewed_at = None
-    _record_corrections(db, who, order, body.model_fields_set)
     order.updated_at = utcnow()
     db.add(order)
+    _record_corrections(db, who, order, body.model_fields_set)
     return _audited_out(db, who, order, "order.update")
 
 

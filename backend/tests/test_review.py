@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, select
 
 from app import review
@@ -335,7 +336,11 @@ def file_engine(client, tmp_path):
 
     def session_per_request():
         with Session(engine) as session:
-            yield session
+            try:
+                yield session
+            except Exception:
+                session.rollback()
+                raise
 
     app.dependency_overrides[get_session] = session_per_request
     yield engine
@@ -441,3 +446,25 @@ def test_document_returns_no_bytes_when_its_audit_cannot_commit(client, file_eng
 
     assert response.status_code == 500
     assert b"%PDF" not in response.content
+
+
+def test_patch_writes_the_order_once(client, file_engine, auth_headers):
+    # A second UPDATE would move the version column twice for one edit.
+    headers = auth_headers()
+    order_id = create_order(client, headers)["id"]
+    with Session(file_engine) as session:
+        add_flag(session, order_id, "provider_name", "illegible")
+    updates: list[str] = []
+
+    def count_order_updates(_conn, _cursor, statement, *_rest) -> None:
+        if statement.startswith('UPDATE "order"'):
+            updates.append(statement)
+
+    event.listen(file_engine, "before_cursor_execute", count_order_updates)
+
+    response = client.patch(
+        f"/v1/orders/{order_id}", json={"provider_name": NEW_PROVIDER}, headers=headers
+    )
+
+    assert response.status_code == 200
+    assert len(updates) == 1
