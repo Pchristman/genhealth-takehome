@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app import auth, orders, upload
+from app import auth, orders, review, spa, upload
 from app.config import settings
 from app.db import init_db
 from app.logging_config import configure_logging, request_id_var
@@ -81,3 +81,7 @@ async def request_context(request: Request, call_next):
 @app.get("/health", tags=["ops"])
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+app.include_router(review.router)
+app.add_exception_handler(404, spa.serve_or_404)

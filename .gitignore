@@ -16,3 +16,4 @@ dist/
 *.tsbuildinfo
 samples/
 .superpowers/
+backend/static/

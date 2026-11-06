@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/*.db
+**/*.db-*
+**/*.tsbuildinfo
+.env
+.env.*
+.git
+backend/static
+samples

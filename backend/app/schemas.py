@@ -1,6 +1,6 @@
 import re
 from datetime import UTC, date, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, StringConstraints
 
@@ -112,3 +112,9 @@ class Page[T](BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class ReviewIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approve", "deny"]

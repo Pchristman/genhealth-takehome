@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi import status as http_status
-from sqlalchemy import func
+from sqlalchemy import func, inspect
 from sqlmodel import Session, col, select
 
 from app.audit import audit
@@ -131,6 +131,33 @@ def read_order(order_id: UUID, who: Auth, db: Db) -> OrderOut:
     return _audited_out(db, who, order, "order.read")
 
 
+def _record_corrections(db: Session, who: Principal, order: Order, fields: set[str]) -> None:
+    """A person's edit settles that field's flags. Read before flushing: history ends there."""
+    state = inspect(order).attrs
+    changed = [field for field in fields if state[field].history.has_changes()]
+    now = utcnow()
+    for flag in db.exec(
+        select(ReviewFlag).where(
+            ReviewFlag.owner_id == who.user_id,
+            ReviewFlag.order_id == order.id,
+            col(ReviewFlag.field).in_(changed),
+            col(ReviewFlag.resolved_at).is_(None),
+        )
+    ):
+        flag.resolved_by = who.user_id
+        flag.resolved_at = now
+        db.add(flag)
+    for row in db.exec(
+        select(FieldEvidence).where(
+            FieldEvidence.owner_id == who.user_id,
+            FieldEvidence.order_id == order.id,
+            col(FieldEvidence.field).in_(changed),
+        )
+    ):
+        row.corrected = True
+        db.add(row)
+
+
 @router.patch("/{order_id}")
 def update_order(order_id: UUID, body: OrderPatch, who: Auth, db: Db) -> OrderOut:
     order = get_order(db, who, str(order_id))
@@ -141,6 +168,7 @@ def update_order(order_id: UUID, body: OrderPatch, who: Auth, db: Db) -> OrderOu
         order.status = OrderStatus.needs_review
         order.reviewed_by = None
         order.reviewed_at = None
+    _record_corrections(db, who, order, body.model_fields_set)
     order.updated_at = utcnow()
     db.add(order)
     return _audited_out(db, who, order, "order.update")

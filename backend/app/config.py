@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     quota_user_daily: int = 20
     quota_global_daily: int = 100
     log_level: str = "INFO"
+    static_dir: Path = Path(__file__).resolve().parents[1] / "static"
 
     @field_validator("jwt_secret")
     @classmethod
