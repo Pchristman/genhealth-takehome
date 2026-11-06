@@ -52,7 +52,7 @@ class ExpectedFile(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    file: str = Field(pattern=r"^[a-z0-9-]+\.pdf$")
+    file: str = Field(pattern=r"^[A-Za-z0-9_-]+\.pdf$")
     pages: int = Field(ge=1)
     text_pages: list[int]  # 1-based pages with a text layer; every other page is image only
     patient_first_name: str | None
@@ -1111,7 +1111,7 @@ def two_patients(rng: random.Random) -> Built:
         None,
         None,
         None,
-        ["multiple_patients", "unverified_quote"],
+        ["multiple_patients"],
         "Two unrelated patients' orders in one PDF, one per page, under the same clinic. The "
         "values may be null or either patient's, but the flag is required.",
         alternatives={
