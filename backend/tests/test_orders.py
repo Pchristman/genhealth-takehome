@@ -224,7 +224,7 @@ def test_patch_changing_one_of_several_values_counts_as_a_change(client, db, aut
     set_status(db, order["id"], OrderStatus.approved, reviewed_by="reviewer-id")
 
     response = client.patch(
-        f"/v1/orders/{order['id']}", json={**ORDER, "provider_npi": "9999999999"}, headers=headers
+        f"/v1/orders/{order['id']}", json={**ORDER, "provider_npi": "1245319599"}, headers=headers
     )
 
     assert response.json()["status"] == "needs_review"
@@ -234,9 +234,9 @@ def test_patch_changing_one_of_several_values_counts_as_a_change(client, db, aut
 @pytest.mark.parametrize("field", ["patient_first_name", "provider_name"])
 def test_text_fields_stop_at_200_characters(client, auth_headers, field):
     headers = auth_headers()
-    order = create_order(client, headers, **{field: "x" * 200})
-    assert order[field] == "x" * 200
-    assert create_order(client, headers, **{field: " " * 50 + "x" * 200})[field] == "x" * 200
+    order = create_order(client, headers, **{field: "ab" * 100})
+    assert order[field] == "ab" * 100
+    assert create_order(client, headers, **{field: " " * 50 + "ab" * 100})[field] == "ab" * 100
 
     too_long = "Zephyrine" * 23
     for response in (
