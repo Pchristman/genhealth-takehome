@@ -318,3 +318,15 @@ def test_a_page_with_an_absurd_amount_of_text_has_no_text_layer():
     report = pdf_worker.parse(fx.text_pdf([long_page, ["Enough typed text for a text layer"]]), 100)
     assert report["pages"][0] == ""
     assert report["pages"][1]
+
+
+def test_the_worker_gets_none_of_the_api_secrets(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-real-key")
+    monkeypatch.setenv("JWT_SECRET", "not-a-real-secret")
+    monkeypatch.setenv("SIGNUP_CODE", "not-a-real-code")
+    calls = fake_worker(monkeypatch, stdout=b'{"pages": [""]}')
+
+    read_pdf(fx.clean_text_pdf())
+
+    passed = calls[0]["env"]
+    assert not {"ANTHROPIC_API_KEY", "JWT_SECRET", "SIGNUP_CODE"} & set(passed)

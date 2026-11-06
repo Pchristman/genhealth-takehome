@@ -9,7 +9,7 @@ A Python API that turns an uploaded DME order PDF into an Order. It extracts the
 
 The running service needs a signup code to register. It is provided separately and is not in this repo.
 
-Where this README and the spec differ, this README describes what was built. The spec was written first: it has open signup and a 120 s timeout, and the build has a signup code and a 240 s model deadline.
+Where this README and the spec differ, this README describes what was built. The spec was written first: it has a 120 s timeout, and the build has a 240 s model deadline.
 
 **Scanned PDFs always go to a person.** A quote can only be verified against a text layer, and a scan has none. The model reads the page image, and nothing in code can confirm what it read, so every value on a scan is `unverified` and the Order is `needs_review`. A searchable scan (a page covered by an image, with an OCR layer on top) counts as a scan, because an OCR layer is also a guess about the image. The cost is a person's time on every fax. The alternative is approving a value no code has checked, where a wrong one means a denied claim or a delayed patient.
 
@@ -29,6 +29,7 @@ Copy-Item .env.example .env
 | --- | --- |
 | `JWT_SECRET` | Signs login tokens. Required, at least 32 characters. Generate one: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `SIGNUP_CODE` | The code a new user must give to register. Choose any value for local use. While it is blank, signup is closed. |
+| `QUOTA_USER_DAILY`, `QUOTA_GLOBAL_DAILY` | Uploads allowed per day, counted in UTC. Defaults are 20 and 100. The deployed service uses 50 and 200. |
 | `ANTHROPIC_API_KEY` | Without it the app still starts. CRUD and auth work, and uploads save as `needs_review` with an `extraction_failed` flag. |
 
 `.env` is gitignored. Never commit it.
@@ -73,15 +74,19 @@ Tests use a stub Claude client, so they need no key and no network. CI runs thes
 
 ### Eval against a running service
 
-This spends real model calls: seven of the generated PDFs reach the model, and the three bad files are refused first. `--pdf` adds GenHealth's sample, which stays out of git.
+This spends real model calls: eight of the generated PDFs reach the model, and the three bad files are refused first. `--pdf` adds GenHealth's sample, which stays out of git.
 
 ```powershell
 cd backend
 $env:SIGNUP_CODE = "<the signup code>"
-uv run python -m scripts.eval --base-url http://localhost:8000 --pdf "..\samples\DME Patient Demo Document CPAP.fax.pdf"
+uv run python -m scripts.eval --base-url http://localhost:8000 --pdf "..\samples\sample.pdf"
 ```
 
-It registers a throwaway user with a generated password and prints one line per file: field names, pass or fail, status, flag codes and verification values, never patient values. It exits non-zero on any mismatch. Each run leaves that user and its synthetic orders in the database, and uses 8 of the 100 uploads the service allows per day.
+It registers a throwaway user with a generated password and prints one line per file: field names, pass or fail, status, flag codes and verification values, never patient values. It exits non-zero on any mismatch. Each run leaves that user and its synthetic orders in the database, and uses 9 of the service's daily uploads with `--pdf`.
+
+### Messy document sets
+
+`scripts/make_messy_faxes.py` generates 12 synthetic faxes with known answers, and `scripts/eval_messy.py` scores them, or any folder with the same `expected.json`, against a running service.
 
 ## Using the API
 
@@ -120,7 +125,7 @@ The response is the Order, with `evidence` (value, quote, page and verification 
 | `GET /v1/orders/{id}/document` | The original PDF |
 | `GET /health` | Liveness |
 
-Errors: 401 no token, 403 wrong signup code, 404 not yours or not found, 413 too big, 415 not a PDF, 422 unreadable or invalid, 429 over quota.
+Errors: 401 no token, 403 wrong signup code, 404 not yours or not found, 409 stale write or wrong status, 413 too big, 415 not a PDF, 422 unreadable or invalid, 429 over quota, 503 busy or the save failed. Up to 8 extractions run at once. Beyond that, upload returns 503 with `Retry-After`.
 
 ## What works
 
@@ -207,7 +212,12 @@ The reviews caught real defects. Two examples: a value and quote truncated toget
 - No encryption at rest beyond the host's.
 - The container runs as root, because the Railway volume mounts as root.
 - No login rate limit.
-- The signup code is short and guessable, so it is not the real cost control. Upload quotas (20 per user and 100 overall per day) and the Anthropic spend limit are the real cost cap.
+- Upload quotas and the Anthropic spend limit are the real cost cap, not the signup code.
+- `fallbacks: "default"` is on, so a request refused by a safety classifier can run on another Claude model. Medical text can trip one by mistake.
+- `version` catches writes that race each other. It doesn't catch a second tab acting on an old screen.
+- A short real name such as `Na` or `Same` reads as a placeholder, and a person can't enter it either, so that Order can only be denied.
+- A PDF with a malformed page tree, such as a bad `/Rotate`, is refused as unreadable.
+- A very large compressed stream is contained by the worker's limits but may still reach the model and spend one upload.
 - No separation of duties.
 - Single-instance SQLite.
 - Document text is untrusted input. It sits in the user turn as data, the model has no tools, and instructions found in a document become a flag.

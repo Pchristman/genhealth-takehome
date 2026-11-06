@@ -28,12 +28,12 @@ def main() -> None:
         raise SystemExit("ANTHROPIC_API_KEY is not set.")
     messages = build_messages(scan_pdf())
 
-    first = call_model(client, messages)
+    first = call_model(client, messages, timeout=120)
     report("turn 1", first)
 
     messages.append({"role": "assistant", "content": first.content})
     messages.append({"role": "user", "content": "Send the same object again, unchanged."})
-    report("turn 2", call_model(client, messages))
+    report("turn 2", call_model(client, messages, timeout=120))
 
 
 if __name__ == "__main__":

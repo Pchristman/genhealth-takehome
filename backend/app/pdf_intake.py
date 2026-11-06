@@ -4,6 +4,7 @@ The parsing itself happens in app.pdf_worker, in a process of its own.
 """
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -42,6 +43,9 @@ def _page_texts(data: bytes) -> list[str]:
         capture_output=True,
         timeout=settings.pdf_parse_timeout_seconds,
         cwd=PACKAGE_ROOT,
+        # Windows can't start Python without SYSTEMROOT. Nothing else is passed,
+        # so a parser exploit finds no API secrets in its environment.
+        env={key: os.environ[key] for key in ("SYSTEMROOT",) if key in os.environ},
     )
     if finished.returncode != 0:
         raise ValueError("worker failed")  # its stderr can quote the document, so it stays unread
