@@ -63,7 +63,7 @@ GenHealth.ai take-home. Submit by 12:55 PM PT on 2026-11-06 (due 1:00 PM).
 ### Your process and pre-submit gates
 - [ ] P1. Approval after the spec and after the plan
 - [ ] P2. 4 to 6 ordered tasks, each reviewable and tested
-- [ ] P3. One task at a time; stop and show changes and test results after each
+- [ ] P3. One task at a time; after tests are green, an adversarial review subagent reviews the task, findings go to you, and a separate subagent fixes them; stop and show changes and test results after each
 - [ ] P4. Failing test first; nothing is called working until it has been run
 - [ ] P5. Commit spec and plan on approval, then after each approved task, with why in the message
 - [ ] P6. No push until you say so
@@ -77,7 +77,8 @@ GenHealth.ai take-home. Submit by 12:55 PM PT on 2026-11-06 (due 1:00 PM).
 None remaining. Your original standard scoped by org and GenHealth's prompt scopes by user. You resolved this during spec review by making user scope the standard, so there is no org layer.
 
 ### No conflict, but needs your action
-- **P6 and G17.** Reviewers can't see the repo until you release the push. Deploying from the Railway CLI doesn't need a push.
+- **P6 and G11.** Railway deploys from GitHub (your choice), so every deploy is a push. P6 still holds: nothing is pushed until you release it, and the first push must happen by the 11:00 checkpoint.
+- **G17.** The repo is public, so reviewers need no extra access. Nothing secret may ever be pushed.
 
 ---
 
@@ -167,7 +168,7 @@ Timestamps are UTC. Ids are UUIDs.
 | **Rejecting vs saving doubtful values** | Save as `needs_review` with flags | Rejecting with 422: the fax disappears from the workflow. Blanking the bad value: the reviewer loses what was printed. |
 | **Auth** | Email and password, stdlib `scrypt`, HS256 JWT (60 min), OAuth2 form so Swagger's Authorize button works | API keys: reviewers can't make two users. SSO: out of scope. Argon2: extra compiled dependency for no gain here. |
 | **Signup** | Open, with upload quotas | Seeded accounts only (you chose open signup). |
-| **Hosting** | Railway trial with a volume, deployed by CLI. Fallback: Railway Hobby or Fly.io, no code change. | Render free: files are lost on spin-down, so accounts vanish. Hugging Face: Docker Spaces need a paid plan. Postgres: outside your stack, and a volume makes it unnecessary. |
+| **Hosting** | Railway trial with a volume, deployed from GitHub on push to `main`. Fallback: Railway Hobby or Fly.io, no code change. | Railway CLI deploys: no link between the git history and what's running. Render free: files are lost on spin-down, so accounts vanish. Hugging Face: Docker Spaces need a paid plan. Postgres: outside your stack, and a volume makes it unnecessary. |
 | **Frontend** | React app built in Docker and served by FastAPI | Separate frontend host: a second deploy plus CORS. |
 | **PDF storage** | BLOB in SQLite | Discarding after extraction: reviewers can't check the source, and A14 loses the fax. Object storage: another account. |
 | **Isolation** | `owner_id` on every user-owned row, one loader | Org layer: no requirement needs it, and it adds a table nothing uses. Row filter per route: one forgotten filter leaks patient data. |
