@@ -57,8 +57,8 @@ Retires the disqualifying risk first.
 - `get_session() -> Iterator[Session]`, `init_db() -> None`
 - `User`, `AuditEvent`, `utcnow()`, `new_id()`
 - `hash_password(str) -> str`, `verify_password(str, str) -> bool`, `create_token(user_id: str) -> str`
-- `Principal(user_id: str)`, `current_principal` dependency
-- `audit(db, who: Principal, action: str, resource_type: str, resource_id: str) -> None`, which adds to the session and doesn't commit
+- `Principal(user_id: str, email: str)`, `current_principal` dependency
+- `audit(db, actor_id: str, action: str, resource_type: str, resource_id: str) -> None`, which adds to the session and doesn't commit
 - `request_id_var`, `configure_logging(level: str)`
 - Pytest fixtures: `client`, `db`, `auth_headers(email) -> dict`
 

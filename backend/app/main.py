@@ -15,6 +15,11 @@ from app.logging_config import configure_logging, request_id_var
 
 log = logging.getLogger("app")
 
+# Pydantic's own wording for these never quotes the input. Any other message might.
+SAFE_MESSAGE_TYPES = frozenset(
+    {"missing", "string_too_short", "string_too_long", "json_invalid", "extra_forbidden"}
+)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -31,12 +36,11 @@ app.include_router(orders.router)
 @app.exception_handler(RequestValidationError)
 async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
     # FastAPI's default echoes the submitted input, which can be a password or a patient field.
-    # Custom value errors can quote the input in their message, so those get a fixed one.
     details = [
         {
             "loc": list(error["loc"]),
             "type": error["type"],
-            "msg": "Invalid value." if error["type"] == "value_error" else error["msg"],
+            "msg": error["msg"] if error["type"] in SAFE_MESSAGE_TYPES else "Invalid value.",
         }
         for error in exc.errors()
     ]

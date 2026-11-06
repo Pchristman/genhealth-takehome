@@ -1,13 +1,19 @@
 import os
 
 # Set before the app imports settings, so tests never read a real .env or spend real credit.
-os.environ["JWT_SECRET"] = "test-secret-" + "x" * 32
+os.environ["JWT_SECRET"] = "test-only-jwt-signing-key-0123456789abcdef"
 os.environ["ANTHROPIC_API_KEY"] = ""
 os.environ["DATABASE_URL"] = "sqlite://"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session, SQLModel  # noqa: E402
+
+from app.config import settings  # noqa: E402
+
+# Blank counts as unset (env_ignore_empty), so the blank variable above would let a real
+# .env key through to the settings. The variable stays blank for the Anthropic SDK.
+settings.anthropic_api_key = None
 
 from app.db import get_session, make_engine  # noqa: E402
 from app.main import app  # noqa: E402

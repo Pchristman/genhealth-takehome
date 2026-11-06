@@ -1,8 +1,12 @@
 .env
 .env.local
+.env.*
+!.env.example
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
+*.sqlite*
 __pycache__/
 .venv/
 .pytest_cache/
