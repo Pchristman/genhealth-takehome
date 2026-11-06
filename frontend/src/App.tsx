@@ -39,7 +39,7 @@ export default function App() {
         <h1>Order Intake</h1>
         {session && (
           <div className="topbar-user">
-            <span className="muted">{session.email}</span>
+            <span className="muted topbar-email">{session.email}</span>
             <button type="button" className="quiet" onClick={() => endSession('')}>
               Log out
             </button>
@@ -79,7 +79,7 @@ export default function App() {
         )}
       </main>
 
-      <footer className="page muted small">
+      <footer className="page page-foot muted small">
         You stay logged in only while this page is open. Reloading it logs you out.
       </footer>
     </>
