@@ -1,6 +1,6 @@
 # Order Intake Service Implementation Plan
 
-> Implement inline with superpowers:executing-plans. One task at a time: failing test first, run it. Once tests are green, an adversarial review subagent reviews the task and its findings go to you. A separate subagent makes the fixes. Stop and show changes and test results, commit only after approval. Pushes deploy, so each one needs your release.
+> Implement inline with superpowers:executing-plans. One task at a time: failing test first, run it. Once tests are green, an adversarial review subagent reviews the task and its findings go to the author. A separate subagent makes the fixes. Stop and show changes and test results, commit only after approval. Pushes deploy, so each one needs the author's release.
 
 **Goal:** Build and deploy the service in [design-spec.md](design-spec.md).
 
@@ -21,9 +21,9 @@
 - Every Order query goes through `get_order`. Patient values never reach logs, audit rows or exception messages.
 - All fixtures are generated and synthetic. `samples/` is gitignored.
 
-## Your prerequisites
+## Prerequisites
 
-Before Task 1 finishes: Railway account, Railway's GitHub app authorized for the new repo, Anthropic key in `.env`, spend limit on that key. You paste `ANTHROPIC_API_KEY` and `JWT_SECRET` into Railway's variables yourself.
+Before Task 1 finishes: Railway account, Railway's GitHub app authorized for the new repo, Anthropic key in `.env`, spend limit on that key. The author pastes `ANTHROPIC_API_KEY` and `JWT_SECRET` into Railway's variables yourself.
 
 ## Review focus
 
@@ -82,9 +82,9 @@ Retires the disqualifying risk first.
 - [ ] Run tests, confirm they pass. Run `uv run ruff check .`.
 - [ ] Local checks: `uv run uvicorn app.main:app`, then `docker compose up --build`. Hit `/health` on both.
 - [ ] `Dockerfile` is multi-stage: Node 24 builds `frontend` when present, Python 3.13 with `uv sync --frozen --no-dev`, listens on `${PORT:-8000}`, `DATABASE_URL=sqlite:////data/app.db`.
-- [ ] Confirm `.env` is untracked, then `gh repo create --public` and push `main` after your release.
-- [ ] Railway, in the dashboard with you: new service from the GitHub repo on `main`, volume at `/data`, variables set. Railway volumes mount as root, so check write access from the app user first.
-- [ ] Persistence check: register a user on the public URL, redeploy from the dashboard, log in again. Passing means the data survived. If the trial lacks volumes or GitHub deploys, stop and tell you. The fallback is Hobby or Fly.io.
+- [ ] Confirm `.env` is untracked, then `gh repo create --public` and push `main` after release.
+- [ ] Railway, in the dashboard: new service from the GitHub repo on `main`, volume at `/data`, variables set. Railway volumes mount as root, so check write access from the app user first.
+- [ ] Persistence check: register a user on the public URL, redeploy from the dashboard, log in again. Passing means the data survived. If the trial lacks volumes or GitHub deploys, the fallback is Hobby or Fly.io.
 - [ ] Stop and show. Commit after approval.
 
 ## Task 2: Order CRUD, isolation and audit (target 11:05)
@@ -277,11 +277,11 @@ Pure functions, no I/O, so this rule set can be reviewed apart from the model.
 
 ---
 
-## After the tasks (from your spec)
+## After the tasks (from the spec)
 
-- [ ] 12:10 to 12:30: Separate security and correctness review with `superpowers:requesting-code-review` and the `security-review` skill. You decide what gets fixed.
-- [ ] Fix what you choose, test-first, push to deploy after your release.
+- [ ] 12:10 to 12:30: Separate security and correctness review with `superpowers:requesting-code-review` and the `security-review` skill. The author decides what gets fixed.
+- [ ] Fix the chosen findings, test-first, push to deploy after release.
 - [ ] 12:30 to 12:45: Finish the README, then clean clone into a new short path: install, `uv run pytest -q`, run dev and Docker paths.
 - [ ] Check `.env` was never committed: `git log --all --diff-filter=A --name-only | grep -F .env`, expecting only `.env.example`.
 - [ ] Confirm the public URL once more from outside: sign up, upload, read.
-- [ ] 12:45 to 12:55: You email the URL and repo link.
+- [ ] 12:45 to 12:55: The author emails the URL and repo link.

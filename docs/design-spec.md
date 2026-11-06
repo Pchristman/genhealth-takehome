@@ -38,11 +38,11 @@ GenHealth.ai take-home. Submit by 12:55 PM PT on 2026-11-06 (due 1:00 PM).
 - [ ] G14. Commit as we go, so the history can be followed
 - [ ] G15. Attempt stays within 3 consecutive hours
 - [ ] G16. Whatever else a production-ready MVP needs
-- [ ] G17. Deliverable: email the public URL and a repo link (or zip with `.git`) to mahum@genhealth.ai and mike@genhealth.ai. You send this.
+- [ ] G17. Deliverable: email the public URL and a repo link (or zip with `.git`) to mahum@genhealth.ai and mike@genhealth.ai. Sent by the author.
 
-### Your standards
+### Engineering standards
 - [ ] S1. Synthetic data only, in code, fixtures, logs and prompts
-- [ ] S2. Every query on user data is scoped by `owner_id`; another user's record returns 404 (you changed this from org scoping during spec review)
+- [ ] S2. Every query on user data is scoped by `owner_id`; another user's record returns 404 (changed from org scoping during spec review)
 - [ ] S3. Every read or change of a patient record is audited, ids only
 - [ ] S4. Never log document text, model output or patient fields, including through tracebacks
 - [ ] S5. All LLM output is validated against a typed schema
@@ -53,31 +53,31 @@ GenHealth.ai take-home. Submit by 12:55 PM PT on 2026-11-06 (due 1:00 PM).
 - [ ] S10. AI may approve when criteria are clearly met, or escalate. Only a person can deny.
 - [ ] S11. Document content is untrusted; instructions inside it are never followed
 
-### Your environment
+### Environment
 - [ ] E1. Repo at `C:\Users\pchri\dev\genhealth\takehome`, short paths only
 - [ ] E2. uv, Python 3.13 (not 3.15), Node 24, Docker, gh
 - [ ] E3. FastAPI, Pydantic v2, SQLite, pytest, React + TypeScript + Vite
 - [ ] E4. Model `claude-opus-5-5`; key in a gitignored `.env`, plus `.env.example`
 - [ ] E5. Runs locally as well as deployed, from a documented path that works on this Windows machine
 
-### Your process and pre-submit gates
+### Process and pre-submit gates
 - [ ] P1. Approval after the spec and after the plan
 - [ ] P2. 4 to 6 ordered tasks, each reviewable and tested
-- [ ] P3. One task at a time; after tests are green, an adversarial review subagent reviews the task, findings go to you, and a separate subagent fixes them; stop and show changes and test results after each
+- [ ] P3. One task at a time; after tests are green, an adversarial review subagent reviews the task, findings go to the author, and a separate subagent fixes them; stop and show changes and test results after each
 - [ ] P4. Failing test first; nothing is called working until it has been run
 - [ ] P5. Commit spec and plan on approval, then after each approved task, with why in the message
-- [ ] P6. No push until you say so
-- [ ] P7. Tell you when we fall behind, and what to cut
-- [ ] P8. Corrections section in the README: what went wrong, how you caught it, the fix
-- [ ] P9. Separate security and correctness review pass; you decide what gets fixed
+- [ ] P6. No push until the author releases it
+- [ ] P7. Report any slip against the schedule, and what to cut
+- [ ] P8. Corrections section in the README: what went wrong, how it was caught, the fix
+- [ ] P9. Separate security and correctness review pass; the author decides what gets fixed
 - [ ] P10. README complete: run, what works, decisions, trade-offs and cuts, AI use, corrections, security notes, next steps, links to `docs/`
 - [ ] P11. A clean clone installs, passes tests and runs
 
 ### Conflict
-None remaining. Your original standard scoped by org and GenHealth's prompt scopes by user. You resolved this during spec review by making user scope the standard, so there is no org layer.
+None remaining. The original standard scoped by org, and GenHealth's prompt scopes by user. User scope became the standard during spec review, so there is no org layer.
 
-### No conflict, but needs your action
-- **P6 and G11.** Railway deploys from GitHub (your choice), so every deploy is a push. P6 still holds: nothing is pushed until you release it, and the first push must happen by the 11:00 checkpoint.
+### Deployment and access
+- **P6 and G11.** Railway deploys from GitHub, so every deploy is a push. P6 still holds: nothing is pushed until the author releases it, and the first push must happen by the 11:00 checkpoint.
 - **G17.** The repo is public, so reviewers need no extra access. Nothing secret may ever be pushed.
 
 ---
@@ -86,14 +86,14 @@ None remaining. Your original standard scoped by org and GenHealth's prompt scop
 
 Nothing here blocks work. Every item has a working assumption.
 
-### Worth asking GenHealth if you can reach them
+### Questions for GenHealth
 | # | Question | Why it matters | Assumption until answered |
 | --- | --- | --- | --- |
 | A1 | Do reviewers test by hand or with a script? If scripted, is there an expected path, field name or response shape? | The prompt names no contract. A script could miss our endpoint. | Hand or Swagger testing. `POST /v1/orders/upload`, multipart field `file`, documented at `/docs` and in the README. |
 | A2 | When prescriber and referring physician differ, which is the "ordering provider"? | The sample has both. | The prescriber, meaning whoever signed or issued the order. If the document doesn't make that clear, value is null with an `ambiguous` flag. |
 | A3 | Does "checks before saving" mean a failed value must not be saved at all, or saved and flagged? | Decides whether a bad NPI blocks the Order. | Checks run before commit. The Order is saved as `needs_review`, with the value as printed and a flag. Rejecting it would lose the fax, and S7 requires a flag. |
 
-### You can settle with a stated assumption
+### Settled with a stated assumption
 | # | Ambiguity | Assumption |
 | --- | --- | --- |
 | A4 | Is there a team or org level? | No. Each user owns their data. Signing up needs the code from `SIGNUP_CODE`. The seed script adds two users, to demonstrate isolation. Shared team queues are a next step. |
@@ -168,7 +168,7 @@ Timestamps are UTC. Ids are UUIDs.
 | **Rejecting vs saving doubtful values** | Save as `needs_review` with flags | Rejecting with 422: the fax disappears from the workflow. Blanking the bad value: the reviewer loses what was printed. |
 | **Auth** | Email and password, stdlib `scrypt`, HS256 JWT (60 min), OAuth2 form so Swagger's Authorize button works | API keys: reviewers can't make two users. SSO: out of scope. Argon2: extra compiled dependency for no gain here. |
 | **Signup** | Signup code from `SIGNUP_CODE`, with upload quotas | Open signup: anyone could spend the Anthropic credit. Site-wide Basic auth: collides with the Bearer header. |
-| **Hosting** | Railway trial with a volume, deployed from GitHub on push to `main`. Fallback: Railway Hobby or Fly.io, no code change. | Railway CLI deploys: no link between the git history and what's running. Render free: files are lost on spin-down, so accounts vanish. Hugging Face: Docker Spaces need a paid plan. Postgres: outside your stack, and a volume makes it unnecessary. |
+| **Hosting** | Railway trial with a volume, deployed from GitHub on push to `main`. Fallback: Railway Hobby or Fly.io, no code change. | Railway CLI deploys: no link between the git history and what's running. Render free: files are lost on spin-down, so accounts vanish. Hugging Face: Docker Spaces need a paid plan. Postgres: outside the stack, and a volume makes it unnecessary. |
 | **Frontend** | React app built in Docker and served by FastAPI | Separate frontend host: a second deploy plus CORS. |
 | **PDF storage** | BLOB in SQLite | Discarding after extraction: reviewers can't check the source, and A14 loses the fax. Object storage: another account. |
 | **Isolation** | `owner_id` on every user-owned row, one loader | Org layer: no requirement needs it, and it adds a table nothing uses. Row filter per route: one forgotten filter leaks patient data. |
@@ -194,7 +194,7 @@ Timestamps are UTC. Ids are UUIDs.
 
 `POST /auth/register` requires a signup code.
 
-Errors: 401 no token, 403 wrong signup code, 404 not yours, 409 stale write or denied Order, 413 too big, 415 not a PDF, 422 unreadable or invalid, 429 over quota.
+Errors: 401 no token, 403 wrong signup code, 404 not the caller's, 409 stale write or denied Order, 413 too big, 415 not a PDF, 422 unreadable or invalid, 429 over quota.
 
 ### Running locally
 The app behaves the same locally and deployed. Only environment variables differ, and every setting has a local default except the Anthropic key and the JWT secret, which come from `.env`.
@@ -222,7 +222,7 @@ Unit and API tests use a stub Claude client, so they are fast, free and need no 
 
 ## 6. What we'd cut first
 
-In order. I'll tell you before cutting anything.
+In order.
 
 1. Frontend polish: styling, filters, empty states
 2. `GET /v1/orders/{id}/document`
@@ -237,10 +237,10 @@ In order. I'll tell you before cutting anything.
 ### Time checkpoints
 | Time | Must be true | If not |
 | --- | --- | --- |
-| 10:40 | Spec and plan approved | Tell you and shorten the plan |
+| 10:40 | Spec and plan approved | Shorten the plan |
 | 11:00 | Skeleton live on Railway, volume survives a restart | Switch host now. This is the one disqualifying risk. |
 | 11:45 | Upload works at the public URL | Cut items 1 to 5 |
 | 12:10 | Feature freeze | Cut whatever remains unfinished |
-| 12:30 | Review pass done, fixes you chose are in | Fix only security and correctness blockers |
+| 12:30 | Review pass done, chosen fixes are in | Fix only security and correctness blockers |
 | 12:45 | README done, clean clone verified | Submit what passes |
-| 12:55 | You've sent the email | |
+| 12:55 | Email sent | |
