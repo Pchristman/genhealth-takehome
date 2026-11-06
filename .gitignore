@@ -1,0 +1,14 @@
+.env
+.env.local
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+*.tsbuildinfo
+samples/
+.superpowers/
