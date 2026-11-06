@@ -1,57 +1,64 @@
+/* Paper and ink: a ruled form for checking values against a source document. Surfaces are flat and
+   separated by hairlines. Monospace marks anything a person compares character by character. */
 :root {
   color-scheme: light dark;
 
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --border: #d5d9e0;
-  --text: #1c2230;
-  --muted: #566072;
-  --accent: #1f5fbf;
-  --accent-text: #ffffff;
-  --accent-hover: #184c99;
-  --focus: #1f5fbf;
-  --danger: #b3261e;
-  --danger-text: #ffffff;
-  --quote: #eef1f5;
+  --bg: #f6f1e7;
+  --surface: #fcf9f2;
+  --border: #cfc6b4;
+  --text: #211c16;
+  --muted: #5a5144;
+  --accent: #0b5a5c;
+  --accent-text: #fcf9f2;
+  --accent-hover: #0b5a5c;
+  --focus: #0b5a5c;
+  --danger: #7a1f24;
+  --danger-text: #fcf9f2;
+  --quote: #efe8d9;
 
-  --green-bg: #dcf3e4;
-  --green-text: #14572e;
-  --amber-bg: #fdf0cf;
-  --amber-text: #6a4a00;
-  --red-bg: #fbe0dd;
-  --red-text: #8a1c15;
-  --grey-bg: #e6e9ee;
-  --grey-text: #3f4859;
+  --green-bg: #e3ecd8;
+  --green-text: #1f4d2b;
+  --amber-bg: #f8e0a6;
+  --amber-text: #553600;
+  --red-bg: #f6dcd5;
+  --red-text: #7a1f24;
+  --grey-bg: #e9e2d3;
+  --grey-text: #453d32;
 
-  --page-width: 72rem;
+  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --sans: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --radius: 2px;
+  --page-width: 76rem;
+
+  font-family: var(--sans);
   line-height: 1.5;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #12151b;
-    --surface: #1b2029;
-    --border: #363e4c;
-    --text: #e8ebf0;
-    --muted: #a3adbd;
-    --accent: #7fb0f5;
-    --accent-text: #0e1420;
-    --accent-hover: #a3c7f8;
-    --focus: #a3c7f8;
-    --danger: #f19a92;
-    --danger-text: #2a0b08;
-    --quote: #252b36;
+    --bg: #171411;
+    --surface: #1f1b17;
+    --border: #4a4136;
+    --text: #ece4d6;
+    --muted: #b5aa98;
+    --accent: #6cc4bd;
+    --accent-text: #171411;
+    --accent-hover: #6cc4bd;
+    --focus: #8fd6cf;
+    --danger: #e8a49a;
+    --danger-text: #2a0e0a;
+    --quote: #2a251f;
 
-    --green-bg: #173a26;
-    --green-text: #a6e4bd;
-    --amber-bg: #3f3210;
-    --amber-text: #f4d98c;
-    --red-bg: #47201d;
-    --red-text: #f8bdb7;
-    --grey-bg: #2b323e;
-    --grey-text: #c6cdd9;
+    --green-bg: #1f3324;
+    --green-text: #b4e0bd;
+    --amber-bg: #4a3610;
+    --amber-text: #f8dc96;
+    --red-bg: #4c1f1c;
+    --red-text: #f9c7bf;
+    --grey-bg: #2e2922;
+    --grey-text: #d3cab9;
   }
 }
 
@@ -82,25 +89,39 @@ blockquote {
   margin: 0;
 }
 
+h1,
+h2 {
+  font-family: var(--serif);
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: lining-nums;
+}
+
 h1 {
-  font-size: 1.125rem;
+  font-size: 1.5rem;
+  letter-spacing: 0.01em;
 }
 
 h2 {
-  font-size: 1.125rem;
+  font-size: 1.25rem;
 }
 
 h3 {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
   color: var(--muted);
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 code {
   font-size: 0.75rem;
-  padding: 0.05rem 0.3rem;
-  border-radius: 4px;
-  background: var(--quote);
   color: var(--muted);
 }
 
@@ -121,39 +142,75 @@ h2:focus-visible {
   font-size: 0.875rem;
 }
 
-/* Layout */
+/* Layout: the header reads as the heading of a form, closed by a double rule. */
 .topbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 0.25rem 1rem;
   /* Lines the bar's content up with the page below it on a wide screen. */
-  padding: 0.75rem max(1rem, calc((100% - var(--page-width)) / 2 + 1rem));
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  padding: 1rem max(1rem, calc((100% - var(--page-width)) / 2 + 1rem)) 0.75rem;
+  border-top: 4px solid var(--accent);
+  border-bottom: 3px double var(--text);
 }
 
 .topbar-user {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: 0.75rem;
   min-width: 0;
+}
+
+.topbar-email {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+}
+
+.topbar-user button {
+  min-height: 2.25rem;
+  padding: 0.2rem 0.7rem;
 }
 
 .page {
   width: 100%;
   max-width: var(--page-width);
   margin: 0 auto;
-  padding: 1rem;
+  padding: 1.25rem 1rem;
 }
 
+.page-foot::before {
+  content: '';
+  display: block;
+  margin-bottom: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+/* A section is a run of the form under a heavy rule, not a floating panel. */
 .card {
+  padding: 0.75rem 0 0;
+  border-top: 2px solid var(--text);
+}
+
+.order-head {
+  padding: 0 0 0.75rem;
+  border-top: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.order-head h2 {
+  font-size: clamp(1.625rem, 1.3rem + 1.4vw, 2.25rem);
+}
+
+/* The two places a person acts sit on their own sheet. */
+.narrow,
+.review-panel {
   padding: 1rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-top: 3px solid var(--text);
+  border-radius: 0;
 }
 
 .narrow {
@@ -161,6 +218,10 @@ h2:focus-visible {
   margin: 1.5rem auto 0;
   display: grid;
   gap: 1rem;
+}
+
+.narrow h2 {
+  font-size: 1.5rem;
 }
 
 .stack {
@@ -209,8 +270,16 @@ h2:focus-visible {
 }
 
 label {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+label .muted {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 input,
@@ -223,11 +292,12 @@ select {
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--muted);
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 
 input[type='file'] {
   padding: 0.35rem;
+  font-size: 0.875rem;
 }
 
 .field-input.inline select {
@@ -238,15 +308,17 @@ button {
   min-height: 2.5rem;
   padding: 0.4rem 0.9rem;
   font: inherit;
+  font-size: 0.9375rem;
   font-weight: 600;
-  color: var(--accent-text);
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
+  color: var(--bg);
+  background: var(--text);
+  border: 1px solid var(--text);
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
 button:hover:not(:disabled) {
+  color: var(--accent-text);
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
@@ -263,8 +335,9 @@ button.quiet {
 }
 
 button.quiet:hover:not(:disabled) {
+  color: var(--text);
   background: var(--quote);
-  border-color: var(--muted);
+  border-color: var(--text);
 }
 
 button.danger {
@@ -274,6 +347,7 @@ button.danger {
 }
 
 button.danger:hover:not(:disabled) {
+  color: var(--danger-text);
   background: var(--danger);
   border-color: var(--danger);
   filter: brightness(0.92);
@@ -286,6 +360,7 @@ button.danger-quiet {
 }
 
 button.danger-quiet:hover:not(:disabled) {
+  color: var(--danger);
   background: var(--red-bg);
   border-color: var(--danger);
 }
@@ -297,13 +372,15 @@ button.link {
   color: var(--accent);
   background: none;
   border: none;
+  font-size: 0.875rem;
   font-weight: 500;
   text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 button.link:hover:not(:disabled) {
   background: none;
-  color: var(--accent-hover);
+  color: var(--text);
 }
 
 a {
@@ -319,32 +396,44 @@ progress {
 /* Messages */
 .alert {
   padding: 0.6rem 0.8rem;
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-left: 4px solid currentColor;
   background: var(--grey-bg);
   color: var(--grey-text);
 }
 
 .alert-error {
+  border-color: currentColor;
   background: var(--red-bg);
   color: var(--red-text);
 }
 
 .alert-warning {
+  border-color: currentColor;
   background: var(--amber-bg);
   color: var(--amber-text);
-  border-left: 4px solid currentColor;
 }
 
-/* Badges: every state has its own word, so none depends on color alone. */
+/* Stamps: every state has its own word, mark and border, so none depends on color alone.
+   The marks are decoration: the word beside each one is what screen readers announce. */
 .badge {
   display: inline-block;
-  padding: 0.1rem 0.55rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   white-space: nowrap;
-  border-radius: 999px;
-  background: var(--grey-bg);
   color: var(--grey-text);
+  background: var(--grey-bg);
+  border: 1px solid currentColor;
+  border-radius: var(--radius);
+}
+
+.badge::before {
+  font-family: var(--mono);
+  font-weight: 700;
 }
 
 .badge-row {
@@ -354,31 +443,76 @@ progress {
   gap: 0.25rem 0.5rem;
 }
 
+/* Confirmed: outlined, the quietest of the marks. */
 .status-approved,
 .verification-verified {
-  background: var(--green-bg);
   color: var(--green-text);
+  background: var(--green-bg);
 }
 
+.verification-verified::before {
+  content: '\2713\00a0';
+  content: '\2713\00a0' / '';
+}
+
+/* Not confirmed: dashed, like a mark still to be inked in, and never green. */
 .status-needs_review,
 .verification-unverified {
-  background: var(--amber-bg);
   color: var(--amber-text);
+  background: var(--amber-bg);
+  border-style: dashed;
+  border-width: 2px;
 }
 
+.verification-unverified::before {
+  content: '?\00a0';
+  content: '?\00a0' / '';
+}
+
+/* Rejected: the only solid-filled mark, so it reads first. */
 .status-denied,
 .verification-failed {
-  background: var(--red-bg);
-  color: var(--red-text);
+  color: var(--danger-text);
+  background: var(--danger);
+  border-color: var(--danger);
 }
 
-/* Order list */
+.verification-failed::before {
+  content: '\00d7\00a0';
+  content: '\00d7\00a0' / '';
+}
+
+.verification-not_applicable {
+  color: var(--muted);
+  background: transparent;
+  border-style: dotted;
+}
+
+/* A person's hand, not the machine's check: the accent, in a double border. */
+.badge-edited {
+  color: var(--accent);
+  background: transparent;
+  border: 3px double currentColor;
+}
+
+/* What a check said about the original print. It no longer speaks for the value above it. */
+.badge-printed {
+  color: var(--muted);
+  background: transparent;
+  border-style: dotted;
+}
+
+/* Order list: ruled ledger lines. */
 .order-list {
   display: grid;
-  gap: 0.5rem;
   margin: 0.75rem 0 0;
   padding: 0;
   list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.order-list > li {
+  border-bottom: 1px solid var(--border);
 }
 
 button.order-row {
@@ -388,17 +522,23 @@ button.order-row {
   justify-content: space-between;
   gap: 0.25rem 1rem;
   width: 100%;
-  padding: 0.6rem 0.75rem;
+  padding: 0.65rem 0.5rem;
+  font-size: 1rem;
   font-weight: 400;
   text-align: left;
   color: var(--text);
   background: transparent;
-  border-color: var(--border);
+  border: none;
+  border-radius: 0;
 }
 
 button.order-row:hover:not(:disabled) {
+  color: var(--text);
   background: var(--quote);
-  border-color: var(--muted);
+}
+
+button.order-row:focus-visible {
+  outline-offset: -3px;
 }
 
 .order-main {
@@ -407,10 +547,38 @@ button.order-row:hover:not(:disabled) {
   min-width: 0;
 }
 
+.order-main strong {
+  font-family: var(--serif);
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-variant-numeric: lining-nums;
+}
+
 .order-side {
   display: grid;
   justify-items: end;
-  gap: 0.15rem;
+  gap: 0.25rem;
+}
+
+/* Phones: the marks take their own line, so every row reads the same however long the name is. */
+@media (max-width: 30rem) {
+  .order-side {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+    margin-top: 0.15rem;
+  }
+}
+
+.flag-count {
+  padding: 0 0.35rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--amber-text);
+  background: var(--amber-bg);
+  border-left: 3px solid currentColor;
 }
 
 .pager {
@@ -421,11 +589,13 @@ button.order-row:hover:not(:disabled) {
   margin-top: 0.75rem;
 }
 
-/* Order detail */
+/* Order detail: the fields are cells of a ruled form. The cells draw the right and bottom rules so
+   a row with an empty cell at its end still closes cleanly. */
 .fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
-  gap: 1rem;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
 }
 
 .field-card {
@@ -434,35 +604,75 @@ button.order-row:hover:not(:disabled) {
   justify-items: stretch;
   gap: 0.5rem;
   min-width: 0;
-  padding: 1rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  padding: 0.85rem 1rem 1rem;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .field-card > button {
   justify-self: start;
+  min-height: 2.25rem;
+  padding: 0.2rem 0.7rem;
 }
 
 .value {
-  font-size: 1.125rem;
+  font-family: var(--serif);
+  font-size: 1.375rem;
   font-weight: 600;
+  line-height: 1.3;
+  font-variant-numeric: lining-nums;
 }
 
-.value-empty {
+/* The two values read digit by digit. */
+.field-patient_dob .value,
+.field-provider_npi .value {
+  font-family: var(--mono);
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.field-patient_dob input,
+.field-provider_npi input {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.field-card .value-empty {
+  font-family: var(--sans);
+  font-size: 1.125rem;
   font-weight: 400;
   font-style: italic;
   color: var(--muted);
 }
 
+.as-printed {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.as-printed .muted {
+  font-family: var(--sans);
+}
+
+/* A source quote is evidence: set like a citation, in the type a person compares with the fax. */
 blockquote {
   display: grid;
-  gap: 0.15rem;
-  padding: 0.5rem 0.7rem;
-  background: var(--quote);
-  border-left: 3px solid var(--border);
-  border-radius: 4px;
+  gap: 0.2rem;
+  padding: 0.1rem 0 0.1rem 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums lining-nums;
+  border-left: 3px solid var(--text);
   white-space: pre-wrap;
+}
+
+blockquote .muted {
+  font-family: var(--sans);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 
 .flags {
@@ -473,22 +683,38 @@ blockquote {
   list-style: none;
 }
 
+/* Flags carry a label, a heavy bar and a full tint, so a scan down the page can't miss one. */
 .flag {
-  padding: 0.4rem 0.6rem;
+  padding: 0.45rem 0.6rem;
   font-size: 0.875rem;
-  background: var(--amber-bg);
   color: var(--amber-text);
-  border-radius: 6px;
+  background: var(--amber-bg);
+  border: 1px solid currentColor;
+  border-left-width: 5px;
+}
+
+.flag::before {
+  content: 'Flag\00a0\00a0';
+  content: 'Flag\00a0\00a0' / '';
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .flag code {
-  background: transparent;
   color: inherit;
 }
 
 .flag-resolved {
-  background: var(--grey-bg);
   color: var(--grey-text);
+  background: transparent;
+  border-color: var(--border);
+  border-left-width: 1px;
+}
+
+.flag-resolved::before {
+  content: none;
 }
 
 .flag-resolved > span:first-child {
@@ -502,7 +728,7 @@ blockquote {
 .orders-layout,
 .detail {
   display: grid;
-  gap: 1rem;
+  gap: 1.5rem;
   min-width: 0;
 }
 
@@ -540,7 +766,7 @@ blockquote {
     overflow-y: auto;
   }
 
-  /* Five cards: pairs with the date of birth between them, so patient and provider read as rows. */
+  /* Five cells: pairs with the date of birth between them, so patient and provider read as rows. */
   .with-review .fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -549,7 +775,7 @@ blockquote {
     grid-column: 1 / -1;
   }
 
-  /* No review panel: three patient cards above two provider cards. */
+  /* No review panel: three patient cells above two provider cells. */
   .detail:not(.with-review) .fields {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }

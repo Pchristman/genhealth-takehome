@@ -65,7 +65,11 @@ function VerificationBadge({ evidence }: { evidence: Evidence }) {
   const label = known?.label ?? evidence.verification
   return (
     <div className="badge-row">
-      <span className={evidence.corrected ? 'badge' : `badge verification-${evidence.verification}`}>
+      <span
+        className={
+          evidence.corrected ? 'badge badge-printed' : `badge verification-${evidence.verification}`
+        }
+      >
         {evidence.corrected ? `As printed: ${label}` : label}
       </span>
       {known && <span className="muted small">{known.meaning}</span>}
@@ -102,7 +106,7 @@ function FieldCard(props: FieldCardProps) {
   }
 
   return (
-    <article className="field-card">
+    <article className={`field-card field-${field}`}>
       <h3>{FIELD_LABELS[field]}</h3>
       {editing ? (
         <form onSubmit={submit} className="stack-tight">
@@ -142,11 +146,11 @@ function FieldCard(props: FieldCardProps) {
         <>
           {evidence.corrected && (
             <div className="badge-row">
-              <span className="badge">Edited by a person</span>
+              <span className="badge badge-edited">Edited by a person</span>
             </div>
           )}
           {showPrinted && (
-            <p className="small">
+            <p className="small as-printed">
               <span className="muted">As printed:</span> {printed ?? 'No value'}
             </p>
           )}
@@ -359,7 +363,7 @@ export function OrderDetail({ client, orderId, onBack }: Props) {
         ← Back to orders
       </button>
 
-      <section className="card stack-tight">
+      <section className="card stack-tight order-head">
         <div className="section-head">
           <h2 ref={headingRef} tabIndex={-1}>
             {name || 'Order'}

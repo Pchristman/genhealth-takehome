@@ -162,10 +162,10 @@ export function Orders({ client, filter, offset, onFilter, onOffset, onOpen }: P
                     <span className="order-main">
                       <strong>{patientName(order)}</strong>
                       <span className="muted small">
-                        {order.patient_dob ?? 'No date of birth'} ·{' '}
+                        <span className="mono">{order.patient_dob ?? 'No date of birth'}</span> ·{' '}
                         {order.provider_name ?? 'No provider'}
                       </span>
-                      <span className="muted small">
+                      <span className="muted small mono">
                         Added {new Date(order.created_at).toLocaleString()}
                       </span>
                     </span>
@@ -174,7 +174,7 @@ export function Orders({ client, filter, offset, onFilter, onOffset, onOpen }: P
                         {STATUS_LABELS[order.status]}
                       </span>
                       {openFlags > 0 && (
-                        <span className="muted small">
+                        <span className="flag-count">
                           {openFlags} open {openFlags === 1 ? 'flag' : 'flags'}
                         </span>
                       )}
