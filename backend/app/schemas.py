@@ -7,7 +7,7 @@ from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Str
 from app.models import OrderSource, OrderStatus, utcnow
 from app.validators import check_dob, is_placeholder, is_valid_npi
 
-Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
 def _as_utc(value: datetime) -> datetime:
