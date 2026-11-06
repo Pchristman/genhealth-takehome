@@ -11,7 +11,7 @@ The running service needs a signup code to register. It is provided separately a
 
 Where this README and the spec differ, this README describes what was built. The spec was written first: it has a 120 s timeout, and the build has a 240 s model deadline.
 
-**Scanned PDFs always go to a person.** A quote can only be verified against a text layer, and a scan has none. The model reads the page image, and nothing in code can confirm what it read, so every value on a scan is `unverified` and the Order is `needs_review`. A searchable scan (a page covered by an image, with an OCR layer on top) counts as a scan, because an OCR layer is also a guess about the image. The cost is a person's time on every fax. The alternative is approving a value no code has checked, where a wrong one means a denied claim or a delayed patient.
+**Scanned PDFs always go to a person.** A quote can only be verified against a text layer, and a scan has none. The model reads the page image, and nothing in code can confirm what it read, so every value on a scan is `unverified` and the Order is `needs_review`. A searchable scan (a page covered by an image, with an OCR layer on top) counts as a scan, because an OCR layer is also a guess about the image. The cost is a person's time on every fax, but a wrong value means a denied claim or a delayed patient.
 
 ## How to run it
 
@@ -142,29 +142,31 @@ Covered by the test suite, with a stub in place of the model:
 
 The React frontend lists, uploads, edits and reviews orders, and opens the source PDF. It has no automated tests. CI runs its lint and build.
 
-Live status:
+## What I checked on the live service
 
-- Public URL: Railway's latest deployment matched `origin/main` at commit `c0252ee`.
-- GenHealth's sample at the public URL, by API and through the UI: the prescriber was picked over the referring physician, the NPI was kept as printed and flagged, the DOB was flagged, all quotes were `unverified`, and the Order went to `needs_review`. A second user got 404.
-- `scripts/eval.py` at the public URL on `c0252ee`: 11 of 12 cases passed, including the sample. The one miss was a wrong expected name for a fixture whose scan image is blank. The app still marked it `unverified` and sent it to review, and that fixture no longer scores the name.
-- Local Docker, 12 generated messy faxes and 7 synthetic orders on real blank form layouts: 95 of 95 fields correct. These were cleaner than a rough real fax, so this isn't proof for GenHealth's worst scans. The forms set first scored 33 of 35 and exposed two date formats the parser didn't read. Those were fixed and rerun.
-- Clean clone from GitHub at `c0252ee`: install, tests, frontend build, and the dev and Docker paths all worked.
-- CI passed on GitHub at `c0252ee`.
-- 886 backend tests pass on `c0252ee`.
+The final deployed commit is `9077cf9`. It matched `main` when deployed, and CI passed on it.
+
+GenHealth's sample, by API and through the UI: it picked the prescriber over the referring physician, kept the NPI as printed and flagged it, flagged the DOB, marked every quote `unverified`, and sent the Order to `needs_review`. A second user got a 404. CRUD, the refusals (non-PDF, over 20 MB, bad token) and six uploads at once also worked there.
+
+`scripts/eval.py` passed 11 of 12 cases on `c0252ee`. The miss was a wrong expected name for a fixture with a blank scan image. The app still marked it `unverified` and sent it to review, and that fixture no longer scores the name.
+
+Locally in Docker, 12 generated messy faxes and 7 synthetic orders on real blank form layouts got 95 of 95 fields right. The forms first scored 33 of 35, which exposed two date formats the parser couldn't read, so I fixed those and reran them. These documents are cleaner than a rough real fax, so this doesn't prove the service on the worst scans.
+
+A clean clone from GitHub installed, passed its 886 backend tests, built the frontend, and ran on the dev and Docker paths at `c0252ee`. Later commits changed the styling, the README and an eval expectation, not the app's backend code.
 
 ## Design decisions
 
-The spec has the full list, with rejected alternatives. The ones that matter most:
+The spec has the full list, with the alternatives I rejected. These matter most:
 
-- **Save and flag, don't reject.** A doubtful value is saved as `needs_review`, printed as it was. Rejecting it would lose the fax, and blanking it would hide what the reviewer needs to see.
-- **Code approves, not the model.** The model's output has no status, confidence or free-text field, and it has no tools. A document that talks the model round has nothing to change.
-- **The model transcribes, code checks.** Values are copied as printed. Code parses dates and checks NPIs, so a misprinted digit can't be quietly repaired.
-- **Retry only what the model can fix.** Up to 3 attempts for a schema error or a quote that isn't on the page. Never for a bad NPI or date, which would press the model to invent a passing value.
-- **Verification is per page.** A typed cover sheet over scanned pages must not make the scans count as verified. A page under 25 non-space characters has no text layer.
-- **The PDF goes straight to Claude.** It reads both page images and text. A separate OCR step would add a dependency and still produce a guess about the image.
-- **Uploads are synchronous.** The request waits for the result, up to a 240 s model deadline, with at most 8 extractions at once. It is easy to test by hand, and it is the first thing to change for real volume.
-- **PDF parsing runs in a subprocess.** A crafted file can then only exhaust a process that can be killed, not the service.
-- **One way to load an Order.** `get_order` filters on owner and deletion, so one forgotten filter can't leak a record.
+- A doubtful value is saved as `needs_review`, printed as it was. Rejecting it would lose the fax, and blanking it would hide what the reviewer needs to see.
+- Code approves, not the model. The model's output has no status, confidence or free-text field, and it has no tools, so an injected instruction has nothing to change.
+- The model transcribes and code checks. Code parses dates and checks NPIs, so a misprinted digit can't be quietly repaired.
+- Retries are for what the model can fix: up to 3 attempts for a schema error or a quote that isn't on the page. A bad NPI or date never retries, because that would press the model to invent a passing value.
+- Verification is per page, so a typed cover sheet can't make the scans behind it count as verified. A page under 25 non-space characters has no text layer.
+- The PDF goes straight to Claude, which reads both page images and text. A separate OCR step would add a dependency and still be a guess about the image.
+- Uploads are synchronous, up to a 240 s model deadline and 8 extractions at once. That's easy to test by hand, and it's the first thing I'd change for real volume.
+- PDF parsing runs in a subprocess, so a crafted file can only exhaust a process that can be killed.
+- `get_order` is the one way to load an Order. It filters on owner and deletion, so no route can forget that filter.
 
 ### Assumptions
 
@@ -175,38 +177,31 @@ The spec has the full list, with rejected alternatives. The ones that matter mos
 - If the model call fails, the Order is saved as `needs_review` with an `extraction_failed` flag, and the PDF is kept.
 - A person entering or editing an order gets a 422 for a bad value, because they can fix it on the spot, unlike a fax.
 
-## Trade-offs and what we cut
+## Trade-offs and what I cut
 
-- **Every fax goes to a person.** Scans are the main path in this domain, so most real orders won't be approved automatically. That is the intended trade: review time for safety.
-- **Synchronous upload.** Simple, but it holds a connection for the whole model call, and 8 concurrent extractions is the ceiling.
-- **SQLite with PDFs as BLOBs.** One file on one volume, which means one instance. Fine for this, not for production.
-- **No NPPES lookup.** The NPI check proves a number is well formed, not that it belongs to this provider.
-- **Extra order fields cut.** Items and diagnosis codes are out of scope.
-- **Separation of duties cut.** An owner can review their own order.
-- **Signup changed from open to a code**, after review showed open signup let anyone spend the model budget.
-- **Deploys have a manual step.** Railway deploys from `main`, but push triggers didn't fire, so `railway service source connect` is run after each push and the live commit is then checked.
+- Scans are the main path in this domain, so most real orders won't be approved automatically.
+- A synchronous upload holds a connection for the whole model call.
+- SQLite with PDFs as BLOBs means one file on one volume, so one instance.
+- There's no NPPES lookup. The NPI check shows a number is well formed, not that it belongs to this provider.
+- I left out extra order fields, such as items and diagnosis codes.
+- There's no separation of duties, so an owner can review their own order.
+- Signup started open and now needs a code, because open signup let anyone spend the model budget.
+- Deploys have a manual step. Railway deploys from `main`, but push triggers didn't fire, so I run `railway service source connect` after each push and check the live commit.
 
 ## How AI was used
 
-Built with Claude Code in this repo.
+I built this with Claude Code. I started with a brainstorm that became the spec, then the plan, and I approved each before work moved on. Agents implemented the tasks in parallel git worktrees. An adversarial review agent then checked each task, and separate agents fixed what it found. I reviewed the findings, chose what to fix, and made the scope calls, such as scoping by user rather than by org.
 
-- **Spec and plan first.** Brainstorming produced the spec, then the plan, and each needed human approval before work moved on.
-- **Agents implemented the tasks** in parallel git worktrees.
-- **An adversarial review agent reviewed each task**, and separate agents fixed the findings.
-- **The human owned the decisions.** The owner reviewed findings, chose what to fix, and made the scope calls, such as user scoping over an org layer.
-
-The reviews caught real defects. Two examples: a value and quote truncated together (`2/17/1961` read from `12/17/1961`) passed the check and gave a false approval, and a tiny PDF could exhaust memory when parsed. The agents also made mistakes, listed below.
+The reviews caught real defects. In one, a value and quote truncated together (`2/17/1961` read from `12/17/1961`) passed the check and gave a false approval. In another, a tiny PDF could exhaust memory when parsed. The agents also made mistakes, which are listed below.
 
 ## Corrections
 
 | What went wrong | How it was caught | The fix |
 | --- | --- | --- |
-| The agent kept an org layer alongside user scoping, carrying `org_id` on every row even though GenHealth's requirement is per user. | Caught in human review of the design spec: the standard should be user scoped. | Removed `Organization` and `org_id`. `owner_id` is now the only scope, and another user's record returns 404. |
-| The agent said a push had triggered a Railway deploy when the service had no trigger. | Caught by checking the deployed commit against origin/main, after `/v1/orders` still returned 404. | Connected the source, and made checking the live commit part of each deploy. |
-| A merge was pushed with 3 failing tests, because the command chain had no gate. Railway never deployed it, but it is in history. | Caught by reading the test output afterwards. | Merges and pushes now stop on a failed test run. |
-| The agent's first frontend check covered only phone width. | Caught by the owner in review. | Desktop and phone are both checked. |
-
-<!-- Append further rows directly under the last table row. -->
+| The agent kept an org layer alongside user scoping, carrying `org_id` on every row even though GenHealth's requirement is per user. | I caught it reviewing the design spec: the standard should be user scoped. | Removed `Organization` and `org_id`. `owner_id` is now the only scope, and another user's record returns 404. |
+| The agent said a push had triggered a Railway deploy when the service had no trigger. | Checking the deployed commit against origin/main, after `/v1/orders` still returned 404. | Connected the source, and made checking the live commit part of each deploy. |
+| A merge was pushed with 3 failing tests, because the command chain had no gate. Railway never deployed it, but it is in history. | Reading the test output afterwards. | Merges and pushes now stop on a failed test run. |
+| The agent's first frontend check covered only phone width. | I asked why it was only phone width. | Desktop and phone are both checked. |
 
 ## Security notes
 
@@ -220,8 +215,6 @@ The reviews caught real defects. Two examples: a value and quote truncated toget
 - A short real name such as `Na` or `Same` reads as a placeholder, and a person can't enter it either, so that Order can only be denied.
 - A PDF with a malformed page tree, such as a bad `/Rotate`, is refused as unreadable.
 - A very large compressed stream is contained by the worker's limits but may still reach the model and spend one upload.
-- No separation of duties.
-- Single-instance SQLite.
 - Document text is untrusted input. It sits in the user turn as data, the model has no tools, and instructions found in a document become a flag.
 - Secrets come from the environment. The signup code, keys and JWT secret are not in the repo.
 
@@ -232,4 +225,5 @@ The reviews caught real defects. Two examples: a value and quote truncated toget
 - An async job queue for uploads.
 - Shared team queues.
 - A document retention policy.
+- Bring-your-own Claude key, depending on the business need. An internal tool is simpler with one managed key. A customer-facing product could use it for billing, but the service would then hold customers' keys, which needs its own security review.
 - Migrations. There is no migration tool today, and `create_all` won't alter existing tables.
