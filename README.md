@@ -144,11 +144,13 @@ The React frontend lists, uploads, edits and reviews orders, and opens the sourc
 
 Live status:
 
-- TODO(verify): public URL serves the merged main commit, checked against origin/main.
-- TODO(verify): eval results at the public URL, by fixture, including GenHealth's sample.
-- TODO(verify): clean clone installs, passes tests, and runs on the dev and Docker paths.
-- TODO(verify): CI passes on GitHub.
-- TODO(verify): final test count on main.
+- Public URL: Railway's latest deployment matched `origin/main` at commit `c0252ee`.
+- GenHealth's sample at the public URL, by API and through the UI: the prescriber was picked over the referring physician, the NPI was kept as printed and flagged, the DOB was flagged, all quotes were `unverified`, and the Order went to `needs_review`. A second user got 404.
+- `scripts/eval.py` at the public URL on `c0252ee`: 11 of 12 cases passed, including the sample. The one miss was a wrong expected name for a fixture whose scan image is blank. The app still marked it `unverified` and sent it to review, and that fixture no longer scores the name.
+- Local Docker, 12 generated messy faxes and 7 synthetic orders on real blank form layouts: 95 of 95 fields correct. These were cleaner than a rough real fax, so this isn't proof for GenHealth's worst scans. The forms set first scored 33 of 35 and exposed two date formats the parser didn't read. Those were fixed and rerun.
+- Clean clone from GitHub at `c0252ee`: install, tests, frontend build, and the dev and Docker paths all worked.
+- CI passed on GitHub at `c0252ee`.
+- 886 backend tests pass on `c0252ee`.
 
 ## Design decisions
 

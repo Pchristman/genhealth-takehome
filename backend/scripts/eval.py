@@ -67,9 +67,15 @@ FIXTURES: dict[str, tuple[Callable[[], bytes], dict]] = {
         fx.scan_pdf,
         {**_NEEDS_REVIEW, "verification": "unverified", "flags": ["unverified_quote"]},
     ),
+    # The fixture's image is blank, so its hidden OCR text is all there is to read, misread name
+    # included. What matters is that nothing vouches for that name, so the name isn't scored.
     "searchable_scan": (
         fx.searchable_scan_pdf,
-        {**_NEEDS_REVIEW, "verification": "unverified", "flags": ["unverified_quote"]},
+        {
+            **{key: value for key, value in _NEEDS_REVIEW.items() if key != "patient_last_name"},
+            "verification": "unverified",
+            "flags": ["unverified_quote"],
+        },
     ),
     "blank_page": (fx.blank_page_pdf, _CLEAN),
     # Refused before the model is called, so these three use no quota.
