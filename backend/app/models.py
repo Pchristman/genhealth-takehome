@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, Integer
 from sqlmodel import Field, SQLModel
 
 
@@ -47,8 +47,17 @@ class Document(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+_order_version = Column("version", Integer, nullable=False)
+
+
 class Order(SQLModel, table=True):
-    """Load one only through orders.get_order. Fields are nullable because a fax can lack them."""
+    """Load one only through orders.get_order. Fields are nullable because a fax can lack them.
+
+    SQLAlchemy adds `version` to every UPDATE's WHERE clause, so a write based on a row that has
+    since changed matches nothing and raises StaleDataError instead of overwriting that change.
+    """
+
+    __mapper_args__ = {"version_id_col": _order_version}
 
     id: str = Field(default_factory=new_id, primary_key=True)
     owner_id: str = Field(foreign_key="user.id", index=True)
@@ -65,6 +74,7 @@ class Order(SQLModel, table=True):
     deleted_at: datetime | None = None
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+    version: int = Field(default=1, sa_column=_order_version)
 
 
 class FieldEvidence(SQLModel, table=True):

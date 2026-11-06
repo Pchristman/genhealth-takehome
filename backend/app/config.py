@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     jwt_ttl_minutes: int = Field(default=60, gt=0)
     database_url: str = "sqlite:///./app.db"
     anthropic_api_key: str | None = None
+    signup_code: str | None = None  # unset closes signup
     llm_model: str = "claude-opus-5-5"
     llm_max_attempts: int = 3
     llm_timeout_seconds: float = 120.0

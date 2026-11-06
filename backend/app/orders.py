@@ -27,21 +27,8 @@ MAX_LIMIT = 100
 MAX_OFFSET = 2**63 - 1  # SQLite's integer limit; past it the query would fail with a 500
 
 
-def _commit(db: Session) -> None:
-    """Commit, or undo everything. Closing the session is not enough after a failed COMMIT.
-
-    SQLAlchemy would return the connection to the pool with the transaction still open, and the
-    next request to get that connection would inherit, and could commit, the failed rows.
-    """
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-
-
 def get_order(db: Session, who: Principal, order_id: str) -> Order:
-    """The only single-Order loader. Call it before changing anything: a miss commits.
+    """The only single-Order loader. A miss commits its audit row and discards anything pending.
 
     Missing, deleted and someone else's all get the same 404, so the response can't confirm that
     an id exists. Pass a validated UUID: a miss stores the id in the audit table.
@@ -53,8 +40,9 @@ def get_order(db: Session, who: Principal, order_id: str) -> Order:
     )
     order = db.exec(statement).first()
     if order is None:
+        db.rollback()  # the commit below is for this audit row, not for the caller's pending rows
         audit(db, who.user_id, "order.access_denied", "order", order_id)
-        _commit(db)
+        db.commit()
         raise HTTPException(http_status.HTTP_404_NOT_FOUND, detail="Order not found.")
     return order
 
@@ -71,9 +59,18 @@ def _to_out(db: Session, who: Principal, orders: list[Order]) -> list[OrderOut]:
         .where(ReviewFlag.owner_id == who.user_id, col(ReviewFlag.order_id).in_(ids))
         .order_by(col(ReviewFlag.id))
     ).all()
+    linked = [order.document_id for order in orders if order.document_id]
+    own_documents = set(
+        db.exec(
+            select(Document.id).where(
+                Document.owner_id == who.user_id, col(Document.id).in_(linked)
+            )
+        )
+    )
     return [
         OrderOut(
-            **order.model_dump(exclude={"owner_id", "deleted_at"}),
+            **order.model_dump(exclude={"owner_id", "deleted_at", "document_id"}),
+            document_id=order.document_id if order.document_id in own_documents else None,
             evidence=[
                 EvidenceOut.model_validate(row) for row in evidence if row.order_id == order.id
             ],
@@ -87,7 +84,7 @@ def _audited_out(db: Session, who: Principal, order: Order, action: str) -> Orde
     """Record the action and return the Order. If the audit can't commit, nothing is returned."""
     audit(db, who.user_id, action, "order", order.id)
     out = _to_out(db, who, [order])[0]
-    _commit(db)
+    db.commit()
     return out
 
 
@@ -114,7 +111,7 @@ def list_orders(
     items = _to_out(db, who, list(orders))
     for order in orders:
         audit(db, who.user_id, "order.read", "order", order.id)
-    _commit(db)
+    db.commit()
     return Page(items=items, total=total, limit=limit, offset=offset)
 
 
@@ -134,7 +131,16 @@ def read_order(order_id: UUID, who: Auth, db: Db) -> OrderOut:
 @router.patch("/{order_id}")
 def update_order(order_id: UUID, body: OrderPatch, who: Auth, db: Db) -> OrderOut:
     order = get_order(db, who, str(order_id))
-    for field, value in body.model_dump(exclude_unset=True).items():
+    if order.status == OrderStatus.denied:
+        raise HTTPException(http_status.HTTP_409_CONFLICT, detail="A denied Order can't be edited.")
+    changes = {
+        field: value
+        for field, value in body.model_dump(exclude_unset=True).items()
+        if getattr(order, field) != value
+    }
+    if not changes:
+        return _audited_out(db, who, order, "order.read")
+    for field, value in changes.items():
         setattr(order, field, value)
     if order.status == OrderStatus.approved:
         # The approval covered the old values, so it goes with them.
@@ -163,4 +169,4 @@ def delete_order(order_id: UUID, who: Auth, db: Db) -> None:
             document.content = None
             db.add(document)
     audit(db, who.user_id, "order.delete", "order", order.id)
-    _commit(db)
+    db.commit()

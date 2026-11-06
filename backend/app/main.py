@@ -7,8 +7,10 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm.exc import StaleDataError
 
 from app import auth, orders
+from app.body_limit import BodyLimitMiddleware
 from app.config import settings
 from app.db import init_db
 from app.logging_config import configure_logging, request_id_var
@@ -31,6 +33,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Order Intake API", lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(orders.router)
+# Added before request_context, which puts it inside: a 413 still gets a request id and a log line.
+app.add_middleware(BodyLimitMiddleware)
 
 
 @app.exception_handler(RequestValidationError)
@@ -45,6 +49,13 @@ async def validation_error(_: Request, exc: RequestValidationError) -> JSONRespo
         for error in exc.errors()
     ]
     return JSONResponse({"detail": details}, status_code=422)
+
+
+@app.exception_handler(StaleDataError)
+async def stale_write(_: Request, __: StaleDataError) -> JSONResponse:
+    # get_session has already rolled back, so the failed change's audit row went with it.
+    detail = "Order changed since it was loaded. Reload it and try again."
+    return JSONResponse({"detail": detail}, status_code=409)
 
 
 @app.middleware("http")

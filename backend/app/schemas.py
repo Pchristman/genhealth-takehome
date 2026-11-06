@@ -5,7 +5,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints
 
 from app.models import OrderSource, OrderStatus
 
-Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
 def _as_utc(value: datetime) -> datetime:
