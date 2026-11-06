@@ -100,9 +100,9 @@ Nothing here blocks work. Every item has a working assumption.
 | A5 | Order fields beyond the five? | None. Items and diagnosis codes are out of scope. |
 | A6 | What do approve and deny mean for an Order? | Approved means ready for downstream use. Denied means a person rejected it. |
 | A7 | When may the AI approve? | Only when code confirms all five fields are present, verified against a text layer, and free of flags. Scans never qualify (S9), so GenHealth's sample always goes to review. |
-| A8 | Date format | US month/day. `12/05/1900` means 1900-12-05. Day-first dates can't be told apart without more context, so the flagged quote stays visible. |
+| A8 | Date format | US month/day. `12/05/1900` means 1900-12-05. Two-digit years are flagged `ambiguous`. Other dates are read as US month/day without a flag, and the source quote stays visible. |
 | A9 | Plausible DOB | Not in the future and at most 120 years old. Anything else is flagged, not removed. |
-| A10 | NPI check | 10 digits passing Luhn with the 80840 prefix. Spaces and hyphens are stripped for the check only. No NPPES registry lookup. |
+| A10 | NPI check | 10 digits starting with 1 or 2, passing Luhn with the 80840 prefix. Spaces and hyphens are stripped for the check only. No NPPES registry lookup. |
 | A11 | Provider name format | As printed, including credentials (`Arjun Raj D.P.M`). |
 | A12 | Several patients in one PDF | One Order, with a `multiple_patients` flag. The model picks nothing silently. |
 | A13 | Non-order or unreadable PDF | Order saved with null fields and `missing` flags. It is never rejected for looking unusual. |

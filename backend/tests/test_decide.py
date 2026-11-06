@@ -13,6 +13,7 @@ from app.extraction_types import (
     Verification,
 )
 from app.models import OrderStatus
+from tests.test_validators import PRINTED_PLACEHOLDERS, REAL_NAMES
 
 TODAY = date(2026, 11, 6)
 PAGE = "Patient: Jane Doe\nDOB: 02/17/1961\nPrescriber: Dana Smith MD\nNPI: 1234567893"
@@ -50,6 +51,11 @@ def codes(decision, name):
 
 def evidence(decision, name):
     return next(item for item in decision.evidence if item.field == name)
+
+
+def on_second_page(name, value, quote, printed, issue=Issue.none):
+    """Every other field stays clean, so this field alone decides the outcome."""
+    return run(result(**{name: field(value, quote, 2, issue)}), [PAGE, printed], {1, 2})
 
 
 def test_all_verified_and_valid_is_approved():
@@ -173,6 +179,159 @@ def test_issue_values_map_to_flags(issue, code):
     assert codes(present, "provider_name") == [code]
     assert present.values["provider_name"] == "Dana Smith MD"
     assert present.status == OrderStatus.needs_review
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "printed"),
+    [
+        ("patient_dob", "2/17/1961", "DOB: 12/17/1961"),
+        ("patient_first_name", "Jan", "Name: Janet"),
+        ("patient_last_name", "Smith", "Name: Smithson"),
+        ("provider_npi", "1234567893", "NPI: 91234567893"),
+    ],
+)
+def test_truncated_value_and_quote_are_not_approved(name, value, printed):
+    decision = on_second_page(name, value, value, printed)
+    assert decision.status == OrderStatus.needs_review
+    assert codes(decision, name) == [FlagCode.quote_not_found]
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "quote"),
+    [
+        ("provider_npi", "1234567893", "Member ID 991234567893"),
+        ("provider_npi", "1234567893", "Member ID 12345678931"),
+        ("provider_npi", "1234567893", "Zip 12345 Ext 67893"),
+        ("patient_first_name", "1205198011", "12/05/1980 11"),
+    ],
+)
+def test_digits_lifted_from_other_numbers_are_not_approved(name, value, quote):
+    decision = on_second_page(name, value, quote, quote)
+    assert decision.status == OrderStatus.needs_review
+    assert FlagCode.quote_not_found in codes(decision, name)
+
+
+@pytest.mark.parametrize("quote", ["NPI: 1234 567 893", "NPI: 1234-567-893"])
+def test_spaced_npi_quote_still_approves_a_plain_value(quote):
+    decision = on_second_page("provider_npi", "1234567893", quote, quote)
+    assert decision.status == OrderStatus.approved
+
+
+@pytest.mark.parametrize("name", ["patient_first_name", "patient_last_name", "provider_name"])
+@pytest.mark.parametrize("value", PRINTED_PLACEHOLDERS)
+def test_printed_placeholder_names_are_not_approved(name, value):
+    decision = on_second_page(name, value, value, f"Name: {value}")
+    assert decision.status == OrderStatus.needs_review
+    assert decision.values[name] is None
+    assert codes(decision, name) == [FlagCode.missing]
+    assert evidence(decision, name).extracted_value == value
+
+
+@pytest.mark.parametrize("value", REAL_NAMES)
+def test_real_names_still_approve(value):
+    decision = on_second_page("patient_last_name", value, value, f"Name: {value}")
+    assert decision.status == OrderStatus.approved
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "printed"),
+    [
+        ("patient_last_name", "Smith", "Name: Smith-Jones"),
+        ("patient_last_name", "Brien", "Name: O'Brien"),
+        ("patient_first_name", "Jan", "Name: Jan\u200be"),
+        ("patient_last_name", "Smi", "Name: Smi\u00adthson"),
+        ("patient_dob", "2/17/1961", "DOB: 1\u200b2/17/1961"),
+        ("patient_first_name", "Jan", "Name: Jan\u0308e"),
+    ],
+)
+@pytest.mark.parametrize("quote_whole_word", [True, False])
+def test_part_of_a_joined_word_is_not_approved(name, value, printed, quote_whole_word):
+    quote = printed.split(": ")[1] if quote_whole_word else value
+    decision = on_second_page(name, value, quote, printed)
+    assert decision.status == OrderStatus.needs_review
+    assert codes(decision, name) == [FlagCode.quote_not_found]
+
+
+def test_full_hyphenated_name_still_approves():
+    decision = on_second_page("patient_last_name", "Smith-Jones", "Smith-Jones", "Smith-Jones")
+    assert decision.status == OrderStatus.approved
+
+
+@pytest.mark.parametrize(
+    ("printed", "expected"),
+    [("02/17/61", date(1961, 2, 17)), ("11/07/26", date(1926, 11, 7))],
+)
+def test_two_digit_year_is_flagged_ambiguous_and_keeps_its_value(printed, expected):
+    decision = on_second_page("patient_dob", printed, f"DOB: {printed}", f"DOB: {printed}")
+    assert decision.status == OrderStatus.needs_review
+    assert codes(decision, "patient_dob") == [FlagCode.ambiguous]
+    assert decision.values["patient_dob"] == expected
+    assert evidence(decision, "patient_dob").extracted_value == printed
+
+
+def test_two_digit_year_with_ambiguous_issue_flags_once():
+    decision = on_second_page("patient_dob", "02/17/61", "02/17/61", "02/17/61", Issue.ambiguous)
+    assert codes(decision, "patient_dob") == [FlagCode.ambiguous]
+
+
+@pytest.mark.parametrize("printed", ["05/12/1980", "12/05/1980", "1980-12-05", "December 5, 1980"])
+def test_four_digit_years_are_read_without_an_ambiguity_flag(printed):
+    decision = on_second_page("patient_dob", printed, f"DOB: {printed}", f"DOB: {printed}")
+    assert decision.status == OrderStatus.approved
+
+
+@pytest.mark.parametrize("npi", ["3000000000", "9999999995"])
+def test_npi_passing_luhn_with_a_bad_first_digit_is_not_approved(npi):
+    decision = on_second_page("provider_npi", npi, npi, f"NPI: {npi}")
+    assert decision.status == OrderStatus.needs_review
+    assert codes(decision, "provider_npi") == [FlagCode.invalid_npi]
+
+
+@pytest.mark.parametrize("name", ["patient_first_name", "patient_last_name", "provider_name"])
+@pytest.mark.parametrize("value", ["5551234567", "12/05/1980", "1234"])
+def test_name_without_letters_is_missing(name, value):
+    decision = on_second_page(name, value, f"Phone {value}", f"Phone {value}")
+    assert decision.status == OrderStatus.needs_review
+    assert decision.values[name] is None
+    assert codes(decision, name) == [FlagCode.missing]
+    assert evidence(decision, name).extracted_value == value
+
+
+def test_name_without_letters_keeps_its_issue_flag():
+    decision = on_second_page(
+        "patient_last_name", "1234", "Phone 1234", "Phone 1234", Issue.illegible
+    )
+    assert codes(decision, "patient_last_name") == [FlagCode.illegible]
+
+
+@pytest.mark.parametrize(
+    ("name", "printed", "stored"),
+    [
+        ("patient_first_name", "  Jane\n", "Jane"),
+        ("provider_name", "\tDana Smith MD ", "Dana Smith MD"),
+        ("provider_npi", " 1234567893\n", "1234567893"),
+    ],
+)
+def test_outer_whitespace_leaves_the_order_value_but_not_the_evidence(name, printed, stored):
+    decision = on_second_page(name, printed, stored, f"Printed: {stored}")
+    assert decision.status == OrderStatus.approved
+    assert decision.values[name] == stored
+    assert evidence(decision, name).extracted_value == printed
+
+
+def test_unparseable_dob_keeps_its_issue_flag():
+    decision = on_second_page("patient_dob", "soon", "soon", "soon", Issue.illegible)
+    assert codes(decision, "patient_dob") == [FlagCode.illegible, FlagCode.invalid_date]
+
+
+def test_implausible_dob_keeps_its_issue_flag():
+    decision = on_second_page(
+        "patient_dob", "12/05/1900", "12/05/1900", "12/05/1900", Issue.conflicting
+    )
+    assert codes(decision, "patient_dob") == [
+        FlagCode.conflicting_values,
+        FlagCode.implausible_dob,
+    ]
 
 
 def test_multiple_patients_and_embedded_instructions_flag():

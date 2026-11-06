@@ -13,8 +13,8 @@ def field(value, quote, page=1):
     return Evidenced(value=value, source_quote=quote, page=page, issue=Issue.none)
 
 
-def verify(evidence, pages=PAGES, text_pages=TEXT_PAGES):
-    return verify_quote(evidence, pages, text_pages)
+def verify(evidence, pages=PAGES, text_pages=TEXT_PAGES, name=None):
+    return verify_quote(evidence, pages, text_pages, name)
 
 
 def result(**overrides):
@@ -58,20 +58,74 @@ def test_value_must_be_inside_its_quote():
 
 
 @pytest.mark.parametrize(
-    ("value", "quote"),
-    [("Jan", "Patient: Jane Doe"), ("2/17/1961", "DOB: 02/17/1961")],
+    ("value", "quote", "page"),
+    [
+        ("Jan", "Patient: Jane Doe", PAGE),
+        ("2/17/1961", "DOB: 02/17/1961", PAGE),
+        ("Jan", "Jan", "Name: Janet"),
+        ("Smith", "Smith", "Name: Smithson"),
+        ("2/17/1961", "2/17/1961", "DOB: 12/17/1961"),
+        ("1234567893", "1234567893", "NPI: 91234567893"),
+    ],
 )
-def test_truncated_value_does_not_count_as_inside_the_quote(value, quote):
-    assert verify(field(value, quote)) == Verification.failed
+def test_truncated_value_does_not_count_inside_quote_or_page(value, quote, page):
+    assert verify(field(value, quote), [page], {1}, "provider_npi") == Verification.failed
+    assert verify(field(value, quote), [page], {1}) == Verification.failed
 
 
 def test_npi_in_quote_compares_digits_only():
-    assert verify(field("1234567893", "NPI: 1234 567 893")) == Verification.verified
-    assert verify(field("1234-567-893", "NPI: 1234 567 893")) == Verification.verified
+    npi = "provider_npi"
+    assert verify(field("1234567893", "NPI: 1234 567 893"), name=npi) == Verification.verified
+    assert verify(field("1234-567-893", "NPI: 1234 567 893"), name=npi) == Verification.verified
 
 
 def test_npi_with_different_digits_fails():
-    assert verify(field("1234567894", "NPI: 1234 567 893")) == Verification.failed
+    evidence = field("1234567894", "NPI: 1234 567 893")
+    assert verify(evidence, name="provider_npi") == Verification.failed
+
+
+@pytest.mark.parametrize(
+    "quote", ["Member ID 991234567893", "Member ID 12345678931", "Zip 12345 Ext 67893"]
+)
+def test_npi_digits_must_stand_alone_and_run_together(quote):
+    assert verify(field("1234567893", quote), [quote], {1}, "provider_npi") == Verification.failed
+
+
+@pytest.mark.parametrize("name", [None, "patient_first_name", "provider_name", "patient_dob"])
+def test_digit_compare_is_for_the_npi_field_only(name):
+    assert verify(field("1234567893", "NPI: 1234 567 893"), name=name) == Verification.failed
+
+
+def test_a_spaced_npi_quote_is_not_a_quote_problem():
+    spaced = result(provider_npi=field("1234567893", "NPI: 1234 567 893"))
+    assert quote_problems(spaced, PAGES, TEXT_PAGES) == []
+
+
+@pytest.mark.parametrize(
+    ("value", "printed"),
+    [
+        ("Smith", "Smith-Jones"),
+        ("Jones", "Smith-Jones"),
+        ("Brien", "O'Brien"),
+        ("Brien", "O\u2019Brien"),
+        ("Jan", "Jan\u200be"),
+        ("Smi", "Smi\u00adthson"),
+        ("2/17/1961", "1\u200b2/17/1961"),
+        ("Jan", "Jan\u0308e"),
+    ],
+)
+def test_word_joiners_are_not_boundaries(value, printed):
+    assert verify(field(value, printed), [printed], {1}) == Verification.failed
+    assert verify(field(value, value), [printed], {1}) == Verification.failed
+
+
+@pytest.mark.parametrize("printed", ["Smith-Jones", "O'Brien"])
+def test_full_joined_name_verifies(printed):
+    assert verify(field(printed, printed), [f"Name: {printed}"], {1}) == Verification.verified
+
+
+def test_invisible_characters_do_not_split_a_match():
+    assert verify(field("Jane", "Ja\u200bne"), ["Name: Ja\u00adne"], {1}) == Verification.verified
 
 
 def test_dates_compare_as_printed():

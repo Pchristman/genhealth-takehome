@@ -198,7 +198,7 @@ def test_deleted_order_returns_404_and_clears_pdf_bytes(client, db, auth_headers
     assert client.delete(path, headers=headers).status_code == 204
 
     assert client.get(path, headers=headers).status_code == 404
-    assert client.patch(path, json={"provider_name": "X"}, headers=headers).status_code == 404
+    assert client.patch(path, json={"provider_name": "Xavier"}, headers=headers).status_code == 404
     assert client.delete(path, headers=headers).status_code == 404
     assert client.get("/v1/orders", headers=headers).json()["items"] == []
     db.expire_all()
