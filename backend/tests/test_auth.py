@@ -8,13 +8,14 @@ from app.config import settings
 from app.main import app
 from app.models import User
 from app.security import create_token
-from tests.conftest import PASSWORD
+from tests.conftest import PASSWORD, SIGNUP_CODE
 
 EMAIL = "ada@example.com"
 
 
 def register(client, email=EMAIL, password=PASSWORD):
-    return client.post("/auth/register", json={"email": email, "password": password})
+    body = {"email": email, "password": password, "signup_code": SIGNUP_CODE}
+    return client.post("/auth/register", json=body)
 
 
 def login(client, email=EMAIL, password=PASSWORD):

@@ -5,9 +5,9 @@ from typing import Annotated, Any
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, StringConstraints
 
 from app.models import OrderSource, OrderStatus, utcnow
-from app.validators import check_dob, is_valid_npi
+from app.validators import check_dob, is_placeholder, is_valid_npi
 
-Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -26,6 +26,12 @@ def _valid_npi(value: str) -> str:
     return value
 
 
+def _real_name(value: str) -> str:
+    if is_placeholder(value):
+        raise ValueError("Enter the name, not a placeholder.")
+    return value
+
+
 def _date_string(value: Any) -> Any:
     # Pydantic alone reads numbers, and numeric strings, as timestamps: 0 becomes 1970-01-01.
     if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
@@ -39,6 +45,7 @@ def _plausible_dob(value: date) -> date:
     return value
 
 
+Name = Annotated[Text, AfterValidator(_real_name)]
 Npi = Annotated[Text, AfterValidator(_valid_npi)]
 Dob = Annotated[date, BeforeValidator(_date_string), AfterValidator(_plausible_dob)]
 
@@ -48,10 +55,10 @@ class OrderIn(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    patient_first_name: Text
-    patient_last_name: Text
+    patient_first_name: Name
+    patient_last_name: Name
     patient_dob: Dob
-    provider_name: Text
+    provider_name: Name
     provider_npi: Npi
 
 
@@ -61,10 +68,10 @@ class OrderPatch(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    patient_first_name: Text = None
-    patient_last_name: Text = None
+    patient_first_name: Name = None
+    patient_last_name: Name = None
     patient_dob: Dob = None
-    provider_name: Text = None
+    provider_name: Name = None
     provider_npi: Npi = None
 
 

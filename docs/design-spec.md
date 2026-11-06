@@ -96,13 +96,13 @@ Nothing here blocks work. Every item has a working assumption.
 ### You can settle with a stated assumption
 | # | Ambiguity | Assumption |
 | --- | --- | --- |
-| A4 | Is there a team or org level? | No. Each user owns their data. The seed script adds two users, to demonstrate isolation. Shared team queues are a next step. |
+| A4 | Is there a team or org level? | No. Each user owns their data. Signing up needs the code from `SIGNUP_CODE`. The seed script adds two users, to demonstrate isolation. Shared team queues are a next step. |
 | A5 | Order fields beyond the five? | None. Items and diagnosis codes are out of scope. |
 | A6 | What do approve and deny mean for an Order? | Approved means ready for downstream use. Denied means a person rejected it. |
 | A7 | When may the AI approve? | Only when code confirms all five fields are present, verified against a text layer, and free of flags. Scans never qualify (S9), so GenHealth's sample always goes to review. |
-| A8 | Date format | US month/day. `12/05/1900` means 1900-12-05. Day-first dates can't be told apart without more context, so the flagged quote stays visible. |
+| A8 | Date format | US month/day. `12/05/1900` means 1900-12-05. Two-digit years are flagged `ambiguous`. Other dates are read as US month/day without a flag, and the source quote stays visible. |
 | A9 | Plausible DOB | Not in the future and at most 120 years old. Anything else is flagged, not removed. |
-| A10 | NPI check | 10 digits passing Luhn with the 80840 prefix. Spaces and hyphens are stripped for the check only. No NPPES registry lookup. |
+| A10 | NPI check | 10 digits starting with 1 or 2, passing Luhn with the 80840 prefix. Spaces and hyphens are stripped for the check only. No NPPES registry lookup. |
 | A11 | Provider name format | As printed, including credentials (`Arjun Raj D.P.M`). |
 | A12 | Several patients in one PDF | One Order, with a `multiple_patients` flag. The model picks nothing silently. |
 | A13 | Non-order or unreadable PDF | Order saved with null fields and `missing` flags. It is never rejected for looking unusual. |
@@ -167,7 +167,7 @@ Timestamps are UTC. Ids are UUIDs.
 | **Upload flow** | Synchronous, 120 s client timeout | Queue and polling: more moving parts, and harder for a reviewer to test by hand. Sync is the first thing to change for real volume. |
 | **Rejecting vs saving doubtful values** | Save as `needs_review` with flags | Rejecting with 422: the fax disappears from the workflow. Blanking the bad value: the reviewer loses what was printed. |
 | **Auth** | Email and password, stdlib `scrypt`, HS256 JWT (60 min), OAuth2 form so Swagger's Authorize button works | API keys: reviewers can't make two users. SSO: out of scope. Argon2: extra compiled dependency for no gain here. |
-| **Signup** | Open, with upload quotas | Seeded accounts only (you chose open signup). |
+| **Signup** | Signup code from `SIGNUP_CODE`, with upload quotas | Open signup: anyone could spend the Anthropic credit. Site-wide Basic auth: collides with the Bearer header. |
 | **Hosting** | Railway trial with a volume, deployed from GitHub on push to `main`. Fallback: Railway Hobby or Fly.io, no code change. | Railway CLI deploys: no link between the git history and what's running. Render free: files are lost on spin-down, so accounts vanish. Hugging Face: Docker Spaces need a paid plan. Postgres: outside your stack, and a volume makes it unnecessary. |
 | **Frontend** | React app built in Docker and served by FastAPI | Separate frontend host: a second deploy plus CORS. |
 | **PDF storage** | BLOB in SQLite | Discarding after extraction: reviewers can't check the source, and A14 loses the fax. Object storage: another account. |
@@ -192,7 +192,9 @@ Timestamps are UTC. Ids are UUIDs.
 | `GET /v1/orders/{id}/document` | Original PDF |
 | `GET /health` | Liveness |
 
-Errors: 401 no token, 404 not yours, 413 too big, 415 not a PDF, 422 unreadable or invalid, 429 over quota.
+`POST /auth/register` requires a signup code.
+
+Errors: 401 no token, 403 wrong signup code, 404 not yours, 409 stale write or denied Order, 413 too big, 415 not a PDF, 422 unreadable or invalid, 429 over quota.
 
 ### Running locally
 The app behaves the same locally and deployed. Only environment variables differ, and every setting has a local default except the Anthropic key and the JWT secret, which come from `.env`.

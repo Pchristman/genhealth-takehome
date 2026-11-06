@@ -1,12 +1,13 @@
 from uuid import uuid4
 
 import pytest
-from sqlmodel import Session, SQLModel, select
+from fastapi import HTTPException
+from sqlmodel import Session, select
 
-from app.db import get_session, make_engine
-from app.main import app
-from app.models import AuditEvent, Document, Order
-from tests.test_orders import ORDER, attach_document, create_order
+from app.auth import Principal
+from app.models import AuditEvent, Document, Order, OrderStatus
+from app.orders import get_order
+from tests.test_orders import ORDER, attach_document, create_order, set_status
 
 ALICE = "alice@example.com"
 BOB = "bob@example.com"
@@ -103,6 +104,62 @@ def test_malformed_id_is_rejected_before_it_can_reach_the_audit_table(client, db
     assert audit_rows(db) == []
 
 
+@pytest.mark.parametrize("flushed", [False, True])
+def test_a_miss_never_commits_the_callers_pending_rows(client, engine, auth_headers, flushed):
+    headers = auth_headers()
+    order_id = create_order(client, headers)["id"]
+    caller = user_id(client, headers)
+    missing = str(uuid4())
+
+    with Session(engine) as session:
+        session.get(Order, order_id).provider_name = "Never committed"
+        session.add(
+            AuditEvent(
+                actor_id=caller, action="order.pending", resource_type="order", resource_id="x"
+            )
+        )
+        if flushed:
+            session.flush()
+        with pytest.raises(HTTPException) as caught:
+            get_order(session, Principal(user_id=caller, email=ALICE), missing)
+
+    assert caught.value.status_code == 404
+    with Session(engine) as session:
+        assert session.get(Order, order_id).provider_name == ORDER["provider_name"]
+        actions = [row.action for row in session.exec(select(AuditEvent))]
+    assert "order.pending" not in actions
+    assert actions[-1] == "order.access_denied"
+
+
+def test_no_change_patch_audits_a_read_not_an_update(client, db, auth_headers):
+    headers = auth_headers()
+    order_id = create_order(client, headers)["id"]
+    before = audit_rows(db)
+
+    response = client.patch(
+        f"/v1/orders/{order_id}",
+        json={"provider_name": ORDER["provider_name"]},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert audit_rows(db)[len(before) :] == [("order.read", order_id)]
+
+
+def test_refused_patch_on_a_denied_order_writes_no_update_audit(client, db, auth_headers):
+    headers = auth_headers()
+    order_id = create_order(client, headers)["id"]
+    set_status(db, order_id, OrderStatus.denied, reviewed_by="reviewer-id")
+    before = audit_rows(db)
+
+    response = client.patch(
+        f"/v1/orders/{order_id}", json={"provider_name": "Changed"}, headers=headers
+    )
+
+    assert response.status_code == 409
+    assert audit_rows(db)[len(before) :] == []
+
+
 def test_audit_rows_contain_no_patient_values(client, db, auth_headers):
     alice, bob = auth_headers(ALICE), auth_headers(BOB)
     order_id = create_order(client, alice)["id"]
@@ -122,31 +179,12 @@ def test_audit_rows_contain_no_patient_values(client, db, auth_headers):
                 assert value not in str(stored), column
 
 
-@pytest.fixture
-def engine(client, tmp_path):
-    """A file database and one session per request, as in production.
+def block_commits(engine, event: str) -> None:
+    """Make SQLite itself refuse the COMMIT of any transaction containing `event`.
 
-    The shared `db` fixture can't prove what persisted: its single connection sees its own
-    uncommitted rows, and a test has to roll it back by hand. Here each request runs alone.
-    """
-    file_engine = make_engine(f"sqlite:///{tmp_path / 'audit.db'}")
-    SQLModel.metadata.create_all(file_engine)
-
-    def session_per_request():
-        with Session(file_engine) as session:
-            yield session
-
-    app.dependency_overrides[get_session] = session_per_request
-    yield file_engine
-    file_engine.dispose()
-
-
-def block_commits_holding_an_audit_row(engine) -> None:
-    """Make SQLite itself refuse the COMMIT of any transaction that inserted an audit row.
-
-    The trigger adds a row breaking a deferred foreign key. The inserts succeed and COMMIT fails,
-    so this is a real commit failure. It follows the audit row rather than failing the first
-    commit, so a route that committed its change first would be caught leaving that change behind.
+    The trigger adds a row breaking a deferred foreign key. The writes succeed and COMMIT fails,
+    so this is a real commit failure. It follows the row rather than failing the first commit, so
+    a route that committed one half of its work first is caught leaving that half behind.
     """
     with engine.begin() as connection:
         connection.exec_driver_sql("CREATE TABLE gate (id TEXT PRIMARY KEY)")
@@ -154,14 +192,22 @@ def block_commits_holding_an_audit_row(engine) -> None:
             "CREATE TABLE blocker (id TEXT REFERENCES gate(id) DEFERRABLE INITIALLY DEFERRED)"
         )
         connection.exec_driver_sql(
-            "CREATE TRIGGER block_audit AFTER INSERT ON auditevent "
+            f"CREATE TRIGGER block_commit AFTER {event} "
             "BEGIN INSERT INTO blocker VALUES (NEW.id); END"
         )
 
 
+def block_commits_holding_an_audit_row(engine) -> None:
+    block_commits(engine, "INSERT ON auditevent")  # catches a change committed before its audit
+
+
+def block_commits_updating_an_order(engine) -> None:
+    block_commits(engine, 'UPDATE ON "order"')  # catches an audit committed before its change
+
+
 def unblock_commits(engine) -> None:
     with engine.begin() as connection:
-        connection.exec_driver_sql("DROP TRIGGER block_audit")
+        connection.exec_driver_sql("DROP TRIGGER block_commit")
 
 
 def persisted(engine) -> dict:
@@ -207,6 +253,32 @@ def test_audit_written_in_same_transaction(
     after = persisted(engine)
     assert after != before
     assert len(after["audits"]) == len(before["audits"]) + 1
+
+
+@pytest.mark.parametrize(
+    ("method", "body", "success"),
+    [("PATCH", {"provider_name": "Ione Vantongeren DO"}, 200), ("DELETE", None, 204)],
+)
+def test_no_audit_persists_when_the_order_change_cannot_commit(
+    client, engine, auth_headers, method, body, success
+):
+    headers = auth_headers()
+    order_id = create_order(client, headers)["id"]
+    with Session(engine) as session:
+        attach_document(session, order_id)
+    url = f"/v1/orders/{order_id}"
+    before = persisted(engine)
+    block_commits_updating_an_order(engine)
+
+    failed = client.request(method, url, json=body, headers=headers)
+
+    assert failed.status_code == 500
+    assert persisted(engine) == before
+
+    # Control: with the gate lifted the same request lands, so the gate was what stopped it.
+    unblock_commits(engine)
+    assert client.request(method, url, json=body, headers=headers).status_code == success
+    assert len(persisted(engine)["audits"]) == len(before["audits"]) + 1
 
 
 def test_read_returns_nothing_when_its_audit_cannot_commit(client, engine, auth_headers):

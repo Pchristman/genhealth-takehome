@@ -1,3 +1,4 @@
+import hmac
 import unicodedata
 from dataclasses import dataclass
 from typing import Annotated
@@ -8,6 +9,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from app.config import settings
 from app.db import get_session
 from app.models import User
 from app.security import DUMMY_HASH, create_token, hash_password, read_token, verify_password
@@ -27,6 +29,7 @@ class Principal:
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=12, max_length=128)
+    signup_code: str
 
 
 class UserOut(BaseModel):
@@ -41,6 +44,17 @@ class TokenOut(BaseModel):
 
 def normalize_email(email: str) -> str:
     return unicodedata.normalize("NFC", email.strip()).lower()
+
+
+def _require_signup_code(submitted: str) -> None:
+    expected = settings.signup_code
+    # Unset means closed, so an empty submission can never match an empty setting.
+    if not expected or not hmac.compare_digest(
+        # surrogatepass: JSON can carry a lone surrogate, which is a wrong code, not a server error.
+        submitted.encode("utf-8", "surrogatepass"),
+        expected.encode("utf-8"),
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Signup is not available.")
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -63,6 +77,7 @@ Auth = Annotated[Principal, Depends(current_principal)]
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def register(body: RegisterIn, db: Db) -> User:
+    _require_signup_code(body.signup_code)  # first: a stranger shouldn't cost a scrypt hash
     user = User(email=normalize_email(body.email), password_hash=hash_password(body.password))
     db.add(user)
     try:
