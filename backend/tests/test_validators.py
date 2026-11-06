@@ -3,7 +3,13 @@ from datetime import date
 import pytest
 
 from app.extraction_types import FlagCode
-from app.validators import check_dob, is_placeholder, is_valid_npi, parse_dob
+from app.validators import (
+    check_dob,
+    has_two_digit_year,
+    is_placeholder,
+    is_valid_npi,
+    parse_dob,
+)
 
 TODAY = date(2026, 11, 6)
 
@@ -270,3 +276,30 @@ def test_patch_accepts_good_npi_and_dob(client, auth_headers):
     assert response.status_code == 200
     assert response.json()["provider_npi"] == "1234-567-893"
     assert response.json()["patient_dob"] == "1970-01-02"
+
+
+@pytest.mark.parametrize(
+    ("printed", "expected"),
+    [
+        ("03 /14 /41", date(1941, 3, 14)),
+        ("03 / 14 / 1941", date(1941, 3, 14)),
+        ("03 - 14 - 1941", date(1941, 3, 14)),
+        ("03-14-41", date(1941, 3, 14)),
+        ("Feb 11 1938", date(1938, 2, 11)),
+        ("Feb 11, 1938", date(1938, 2, 11)),
+        ("February 11 1938", date(1938, 2, 11)),
+        ("February 11, 1938", date(1938, 2, 11)),
+    ],
+)
+def test_parse_dob_reads_common_printed_forms(printed, expected):
+    assert parse_dob(printed, date(2026, 11, 6)) == expected
+
+
+@pytest.mark.parametrize("printed", ["03 /14 /41", "03-14-41", "03 - 14 - 41"])
+def test_spaced_or_dashed_two_digit_years_still_count_as_a_century_guess(printed):
+    assert has_two_digit_year(printed)
+
+
+@pytest.mark.parametrize("printed", ["Feb 11 1938", "03 / 14 / 1941"])
+def test_four_digit_forms_are_not_a_century_guess(printed):
+    assert not has_two_digit_year(printed)

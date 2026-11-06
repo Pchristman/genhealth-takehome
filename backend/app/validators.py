@@ -8,8 +8,17 @@ from app.extraction_types import FlagCode
 
 MAX_AGE_YEARS = 120
 NPI_PREFIX = "80840"  # the health-industry prefix the NPI check digit is computed over
-TWO_DIGIT_YEAR_FORMAT = "%m/%d/%y"
-DOB_FORMATS = ("%m/%d/%Y", "%m-%d-%Y", TWO_DIGIT_YEAR_FORMAT, "%Y-%m-%d", "%B %d, %Y")
+TWO_DIGIT_YEAR_FORMATS = ("%m/%d/%y", "%m-%d-%y")
+DOB_FORMATS = (
+    "%m/%d/%Y",
+    "%m-%d-%Y",
+    *TWO_DIGIT_YEAR_FORMATS,
+    "%Y-%m-%d",
+    "%B %d, %Y",
+    "%B %d %Y",
+    "%b %d, %Y",
+    "%b %d %Y",
+)
 # Compared with everything but letters and digits removed, so "N / A" and "[unknown]" match too. A
 # false match only sends the Order to a person with the printed text still in evidence, so "na"
 # stays in. A false miss approves a stand-in as somebody's name.
@@ -55,13 +64,18 @@ def is_valid_npi(value: str) -> bool:
     return re.fullmatch(r"[12][0-9]{9}", digits) is not None and _luhn_passes(NPI_PREFIX + digits)
 
 
+def _date_text(value: str) -> str:
+    """Forms print dates in boxes, so separators can have spaces around them: `03 /14 /41`."""
+    return re.sub(r"\s*([/-])\s*", lambda m: m[1], " ".join(value.split()))
+
+
 def parse_dob(value: str, today: date) -> date | None:
     """Month first. `today` places two-digit years: one landing after it moves back a century."""
-    text = value.strip()
+    text = _date_text(value)
     for date_format in DOB_FORMATS:
         try:
             parsed = datetime.strptime(text, date_format).date()
-            if date_format == TWO_DIGIT_YEAR_FORMAT and parsed > today:
+            if date_format in TWO_DIGIT_YEAR_FORMATS and parsed > today:
                 parsed = parsed.replace(year=parsed.year - 100)
         except ValueError:
             continue
@@ -71,11 +85,13 @@ def parse_dob(value: str, today: date) -> date | None:
 
 def has_two_digit_year(value: str) -> bool:
     """True when `parse_dob` had to guess the century."""
-    try:
-        datetime.strptime(value.strip(), TWO_DIGIT_YEAR_FORMAT)
-    except ValueError:
-        return False
-    return True
+    for date_format in TWO_DIGIT_YEAR_FORMATS:
+        try:
+            datetime.strptime(_date_text(value), date_format)
+        except ValueError:
+            continue
+        return True
+    return False
 
 
 def check_dob(value: date, today: date) -> FlagCode | None:
