@@ -18,6 +18,7 @@ BOB = "bob@example.com"
 PRINTED_NPI = "9182734556"
 CORRECTED_NPI = "1234567893"
 NEW_PROVIDER = "Ione Vantongeren DO"
+DECISION_ACTIONS = {"order.approve", "order.deny"}
 
 
 def post_review(client, headers, order_id: str, decision: str = "approve"):
@@ -77,10 +78,11 @@ def test_person_can_deny(client, db, auth_headers):
     assert body["status"] == "denied"
     assert body["reviewed_by"] == user_id(client, headers)
     assert body["reviewed_at"].endswith("Z")
-    assert ("order.review", "order", order_id) in actions(db)
+    assert ("order.deny", "order", order_id) in actions(db)
+    assert ("order.approve", "order", order_id) not in actions(db)
 
 
-def test_person_can_approve(client, auth_headers):
+def test_person_can_approve(client, db, auth_headers):
     headers = auth_headers()
     order_id = create_order(client, headers)["id"]
 
@@ -89,6 +91,18 @@ def test_person_can_approve(client, auth_headers):
     assert body["status"] == "approved"
     assert body["reviewed_by"] == user_id(client, headers)
     assert client.get(f"/v1/orders/{order_id}", headers=headers).json()["status"] == "approved"
+    assert ("order.approve", "order", order_id) in actions(db)
+    assert ("order.deny", "order", order_id) not in actions(db)
+
+
+@pytest.mark.parametrize("decision", ["approve", "deny"])
+def test_review_no_longer_writes_the_generic_action(client, db, auth_headers, decision):
+    headers = auth_headers()
+    order_id = create_order(client, headers)["id"]
+
+    post_review(client, headers, order_id, decision)
+
+    assert "order.review" not in {row[0] for row in actions(db)}
 
 
 def test_approve_with_open_flags_keeps_flags(client, db, auth_headers):
@@ -138,7 +152,7 @@ def test_review_requires_needs_review_status(client, db, auth_headers, status, d
     order = db.get(Order, order_id)
     assert order.status == status
     assert order.reviewed_by == "first-reviewer"
-    assert not [row for row in actions(db) if row[0] == "order.review"]
+    assert not [row for row in actions(db) if row[0] in DECISION_ACTIONS]
 
 
 @pytest.mark.parametrize(
@@ -178,7 +192,7 @@ def test_other_user_cannot_review_or_download(client, db, auth_headers):
         assert response.json() == {"detail": "Order not found."}
     assert client.get(f"/v1/orders/{order_id}", headers=alice).json()["status"] == "needs_review"
     assert ("order.access_denied", "order", order_id) in actions(db)
-    assert not [row for row in actions(db) if row[0] in ("order.review", "document.read")]
+    assert not [row for row in actions(db) if row[0] in DECISION_ACTIONS | {"document.read"}]
 
 
 @pytest.mark.parametrize(
@@ -284,6 +298,16 @@ def test_document_download_audited(client, db, auth_headers):
     assert ("document.read", "document", document_id) in actions(db)
 
 
+def test_document_is_never_stored_by_a_cache(client, db, auth_headers):
+    headers = auth_headers()
+    order_id = create_order(client, headers)["id"]
+    attach_document(db, order_id)
+
+    response = client.get(f"/v1/orders/{order_id}/document", headers=headers)
+
+    assert response.headers["cache-control"] == "no-store"
+
+
 def test_document_is_404_for_an_order_without_a_pdf(client, db, auth_headers):
     headers = auth_headers()
     order_id = create_order(client, headers)["id"]
@@ -381,7 +405,7 @@ def test_review_rejects_a_stale_write(client, file_engine, auth_headers, monkeyp
         assert stored.status == OrderStatus.denied
         assert stored.reviewed_by == "rival-reviewer"
         audits = session.exec(select(AuditEvent)).all()
-        assert "order.review" not in {row.action for row in audits}
+        assert not DECISION_ACTIONS & {row.action for row in audits}
 
 
 def test_review_cannot_resurrect_an_order_deleted_mid_review(

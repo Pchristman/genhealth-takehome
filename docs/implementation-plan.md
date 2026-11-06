@@ -230,7 +230,7 @@ Pure functions, no I/O, so this rule set can be reviewed apart from the model.
 - Test: `backend/tests/test_review.py`, `backend/tests/test_spa.py`
 
 **Interfaces produced:**
-- `POST /v1/orders/{id}/review`, body `{"decision": "approve" | "deny"}`, sets `reviewed_by`, `reviewed_at`
+- `POST /v1/orders/{id}/review`, body `{"decision": "approve" | "deny"}`, sets `reviewed_by`, `reviewed_at`, audits `order.approve` or `order.deny`
 - `GET /v1/orders/{id}/document`, returns `application/pdf`, audits `document.read`
 - Editing a field through `PATCH` resolves that field's flags and sets `FieldEvidence.corrected`
 

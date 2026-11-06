@@ -57,7 +57,13 @@ export default function App() {
             }}
           />
         ) : orderId ? (
-          <OrderDetail client={client} orderId={orderId} onBack={() => setOrderId(null)} />
+          // The key stops one order's data from ever sitting behind another order's id.
+          <OrderDetail
+            key={orderId}
+            client={client}
+            orderId={orderId}
+            onBack={() => setOrderId(null)}
+          />
         ) : (
           <Orders
             client={client}

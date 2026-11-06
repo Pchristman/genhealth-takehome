@@ -188,7 +188,7 @@ Timestamps are UTC. Ids are UUIDs.
 | `GET /v1/orders` (paged, status filter), `POST /v1/orders` | List own orders, manual create |
 | `GET`, `PATCH`, `DELETE /v1/orders/{id}` | Read with evidence and flags, edit, soft delete |
 | `POST /v1/orders/upload` | Upload a PDF, returns 201 with the Order |
-| `POST /v1/orders/{id}/review` | `{"decision": "approve"}` or `"deny"`, person only |
+| `POST /v1/orders/{id}/review` | `{"decision": "approve"}` or `"deny"`, person only, audited as `order.approve` or `order.deny` |
 | `GET /v1/orders/{id}/document` | Original PDF |
 | `GET /health` | Liveness |
 

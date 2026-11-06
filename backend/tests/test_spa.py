@@ -41,6 +41,55 @@ def test_spa_serves_static_assets(client, built):
     assert response.text == SCRIPT
 
 
+def test_spa_assets_are_cached_for_good(client, built):
+    response = client.get("/assets/app.js")
+
+    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+@pytest.mark.parametrize("path", ["/", "/index.html", "/orders", "/orders/123/detail"])
+def test_spa_index_is_revalidated_so_a_new_build_is_seen(client, built, path):
+    response = client.get(path)
+
+    assert response.text == INDEX
+    assert response.headers["cache-control"] == "no-cache"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/assets/gone-abc123.js",
+        "/assets/nested/gone.css",
+        "/assets/no-extension",
+        "/assets",
+        "/ASSETS/gone.js",
+        "/assets/app.js%00.html",
+        "/favicon.ico",
+        "/robots.txt",
+        "/orders/report.pdf",
+        "/.env",
+    ],
+)
+def test_spa_missing_file_is_a_404_not_the_index(client, built, path):
+    # An old bundle name must fail, or the browser runs index.html as a script and caches it.
+    response = client.get(path)
+
+    assert response.status_code == 404
+    assert response.json() == JSON_404
+    assert "cache-control" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/V1/orders", "/V1/nothing", "/Auth/nothing", "/HEALTH", "/Docs", "/OpenAPI.JSON", "/ReDoc"],
+)
+def test_spa_api_roots_match_in_any_case(client, built, path):
+    response = client.get(path)
+
+    assert response.status_code == 404
+    assert response.json() == JSON_404
+
+
 @pytest.mark.parametrize("path", ["/orders", "/orders/123/detail", "/login"])
 def test_spa_falls_back_to_index_for_other_get_paths(client, built, path):
     response = client.get(path)
@@ -119,8 +168,8 @@ def test_spa_refuses_traversal_out_of_the_static_dir(client, built, path):
     response = client.get(path)
 
     assert SECRET not in response.text
-    assert response.status_code == 200
-    assert response.text == INDEX
+    assert response.status_code == 404
+    assert response.json() == JSON_404
 
 
 def test_spa_refuses_an_absolute_path(client, built):
@@ -129,10 +178,11 @@ def test_spa_refuses_an_absolute_path(client, built):
     response = client.get("/" + quote(target, safe=""))
 
     assert SECRET not in response.text
-    assert response.text == INDEX
+    assert response.status_code == 404
+    assert response.json() == JSON_404
 
 
-@pytest.mark.parametrize("path", ["/bad%00name", "/assets/app.js%00.html", "/" + "a" * 5000])
+@pytest.mark.parametrize("path", ["/bad%00name", "/" + "a" * 5000])
 def test_spa_survives_a_path_the_filesystem_rejects(client, built, path):
     response = client.get(path)
 
