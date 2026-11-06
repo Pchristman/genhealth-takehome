@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
-ALLOWED_EXTRA = {"method", "route", "status_code", "duration_ms", "model", "attempt"}
+ALLOWED_EXTRA = {"method", "route", "status_code", "duration_ms", "model", "attempt", "reason"}
 
 
 class JsonFormatter(logging.Formatter):
@@ -46,5 +46,5 @@ def configure_logging(level: str = "INFO") -> None:
         logger.handlers = []
         logger.propagate = True
     logging.getLogger("uvicorn.access").disabled = True  # replaced by our request log
-    for name in ("httpx", "httpcore", "anthropic"):
+    for name in ("httpx", "httpcore", "anthropic", "pdfminer", "pdfplumber", "python_multipart"):
         logging.getLogger(name).setLevel(logging.WARNING)

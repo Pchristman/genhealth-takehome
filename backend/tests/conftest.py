@@ -1,4 +1,7 @@
+import logging
 import os
+import sys
+from io import StringIO
 
 # Set before the app imports settings, so tests never read a real .env or spend real credit.
 os.environ["JWT_SECRET"] = "test-only-jwt-signing-key-0123456789abcdef"
@@ -44,3 +47,35 @@ def auth_headers(client):
         return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
     return make
+
+
+@pytest.fixture
+def stub_llm(client):
+    """Install a stub Claude client: stub_llm(reply(...), reply(...)). Replies are used in order."""
+    from app.llm import get_llm_client
+    from tests.llm_stub import StubClient
+
+    def install(*replies, on_call=None) -> StubClient:
+        stub = StubClient(*replies, on_call=on_call)
+        app.dependency_overrides[get_llm_client] = lambda: stub
+        return stub
+
+    return install
+
+
+@pytest.fixture
+def captured_logs(monkeypatch):
+    """Real output: the app's own handler and formatter, at the noisiest level.
+
+    Not capsys: it swaps its stream between test phases, so a handler set up here would write to a
+    closed file and the capture would be empty, which any "not in the logs" check passes.
+    """
+    from app.logging_config import configure_logging
+
+    root = logging.getLogger()
+    saved = root.handlers[:], root.level
+    stream = StringIO()
+    monkeypatch.setattr(sys, "stdout", stream)
+    configure_logging("DEBUG")
+    yield stream.getvalue
+    root.handlers, root.level = saved[0], saved[1]
