@@ -1,3 +1,4 @@
+import unicodedata
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -38,6 +39,10 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
 
 
+def normalize_email(email: str) -> str:
+    return unicodedata.normalize("NFC", email.strip()).lower()
+
+
 def _unauthorized(detail: str) -> HTTPException:
     return HTTPException(
         status.HTTP_401_UNAUTHORIZED, detail=detail, headers={"WWW-Authenticate": "Bearer"}
@@ -58,7 +63,7 @@ Auth = Annotated[Principal, Depends(current_principal)]
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def register(body: RegisterIn, db: Db) -> User:
-    user = User(email=body.email.lower(), password_hash=hash_password(body.password))
+    user = User(email=normalize_email(body.email), password_hash=hash_password(body.password))
     db.add(user)
     try:
         db.commit()
@@ -71,7 +76,7 @@ def register(body: RegisterIn, db: Db) -> User:
 
 @router.post("/token", response_model=TokenOut)
 def token(form: Annotated[OAuth2PasswordRequestForm, Depends()], db: Db) -> TokenOut:
-    user = db.exec(select(User).where(User.email == form.username.lower())).first()
+    user = db.exec(select(User).where(User.email == normalize_email(form.username))).first()
     valid = verify_password(form.password, user.password_hash if user else DUMMY_HASH)
     if user is None or not valid:
         raise _unauthorized("Incorrect email or password.")

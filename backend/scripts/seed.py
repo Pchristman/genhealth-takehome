@@ -5,6 +5,7 @@ The password comes from SEED_PASSWORD, or is generated and printed once.
 
 import os
 import secrets
+import sys
 
 from sqlmodel import Session, select
 
@@ -16,8 +17,11 @@ EMAILS = ["demo-a@example.com", "demo-b@example.com"]
 
 
 def main() -> None:
+    given = os.environ.get("SEED_PASSWORD")
+    if given and len(given) < 12:
+        sys.exit("SEED_PASSWORD must be at least 12 characters.")
     init_db()
-    password = os.environ.get("SEED_PASSWORD") or secrets.token_urlsafe(16)
+    password = given or secrets.token_urlsafe(16)
     created = []
     with Session(engine) as db:
         for email in EMAILS:
@@ -27,7 +31,7 @@ def main() -> None:
         db.commit()
     if created:
         print(f"Created {', '.join(created)}")
-        if "SEED_PASSWORD" not in os.environ:
+        if not given:
             print(f"Password: {password}")
     else:
         print("Demo users already exist.")

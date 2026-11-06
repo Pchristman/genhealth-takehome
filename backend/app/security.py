@@ -23,8 +23,11 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, stored: str) -> bool:
-    salt_hex, digest_hex = stored.split("$", 1)
-    return hmac.compare_digest(_derive(password, bytes.fromhex(salt_hex)).hex(), digest_hex)
+    try:
+        salt_hex, digest_hex = stored.split("$", 1)
+        return hmac.compare_digest(_derive(password, bytes.fromhex(salt_hex)).hex(), digest_hex)
+    except (ValueError, TypeError):  # a malformed stored hash, not a server error
+        return False
 
 
 # Verified against when the email is unknown, so timing doesn't reveal which emails exist.
