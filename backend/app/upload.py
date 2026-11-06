@@ -8,6 +8,7 @@ pdfplumber and the Claude call run in the threadpool.
 
 import hashlib
 import logging
+import threading
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -19,20 +20,29 @@ from starlette.requests import ClientDisconnect
 
 from app.audit import audit
 from app.auth import Auth, Db, Principal
+from app.body_limit import TOO_LARGE, upload_body_limit
 from app.config import settings
 from app.decide import Decision, decide, failed_decision
-from app.llm import LLMError, extract, get_llm_client
+from app.llm import extract, get_llm_client
 from app.models import Document, FieldEvidence, Order, OrderSource, ReviewFlag, utcnow
-from app.orders import _audited_out, _commit
+from app.orders import _audited_out
 from app.pdf_intake import PdfRejected, read_pdf
 from app.schemas import OrderOut
 
 router = APIRouter(prefix="/v1/orders", tags=["orders"])
 log = logging.getLogger("app.upload")
 
-MULTIPART_OVERHEAD = 64 * 1024  # room for boundaries and part headers around the file itself
+MAX_CONCURRENT_EXTRACTIONS = 8  # a PDF worker and a model call each, out of 40 threadpool threads
 NO_FILE = "Send one PDF in the multipart field `file`."
-TOO_LARGE = "The file is over the upload size limit."
+
+BUSY = "Too many uploads are in progress. Try again shortly."
+QUOTA_REACHED = "Daily upload limit reached."
+
+# Held from the count through the commit, so two uploads can't both take the last place. It covers
+# one process, which is how the Dockerfile runs this.
+_quota_lock = threading.Lock()
+# Taken before anything is stored, so a refused upload loses nothing and spends no quota.
+extraction_slots = threading.BoundedSemaphore(MAX_CONCURRENT_EXTRACTIONS)
 
 # The route reads its own body, so FastAPI can't work this out for Swagger's file picker.
 UPLOAD_BODY = {
@@ -55,15 +65,19 @@ class _BodyTooLarge(Exception):
     pass
 
 
-def enforce_quota(who: Auth, db: Db) -> None:
+def _over_quota(db: Session, user_id: str) -> bool:
     """Counts stored Documents, so a rejected file costs nothing and a failed extraction does."""
     day_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     today = select(func.count()).select_from(Document).where(Document.created_at >= day_start)
     everyone = db.exec(today).one()
-    yours = db.exec(today.where(Document.owner_id == who.user_id)).one()
+    yours = db.exec(today.where(Document.owner_id == user_id)).one()
     db.rollback()  # no transaction stays open while a slow client sends its body
-    if yours >= settings.quota_user_daily or everyone >= settings.quota_global_daily:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="Daily upload limit reached.")
+    return yours >= settings.quota_user_daily or everyone >= settings.quota_global_daily
+
+
+def enforce_quota(who: Auth, db: Db) -> None:
+    if _over_quota(db, who.user_id):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=QUOTA_REACHED)
 
 
 Quota = Annotated[None, Depends(enforce_quota)]
@@ -78,13 +92,13 @@ async def read_upload(request: Request, _: Quota) -> bytes:
     if not request.headers.get("content-type", "").lower().startswith("multipart/form-data"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=NO_FILE)
 
-    body_limit = settings.upload_max_bytes + 1 + MULTIPART_OVERHEAD
+    limit = upload_body_limit()
 
     async def bounded_body():
         seen = 0
         async for chunk in request.stream():
             seen += len(chunk)
-            if seen > body_limit:
+            if seen > limit:
                 raise _BodyTooLarge
             yield chunk
 
@@ -109,19 +123,26 @@ LlmClient = Annotated[Any, Depends(get_llm_client)]
 
 
 def _store_document(db: Session, who: Principal, data: bytes, page_count: int, pages: set[int]):
-    """Committed before the model is called, so a failed call can't lose the fax."""
-    document = Document(
-        owner_id=who.user_id,
-        sha256=hashlib.sha256(data).hexdigest(),
-        byte_size=len(data),
-        page_count=page_count,
-        text_pages=sorted(pages),
-        content=data,
-    )
-    document_id = document.id  # read now: commit expires the object, and touching it reopens a read
-    db.add(document)
-    audit(db, who.user_id, "document.upload", "document", document_id)
-    _commit(db)
+    """Committed before the model is called, so a failed call can't lose the fax.
+
+    The early check ran before the body arrived, and any number of uploads can pass it together.
+    This one decides.
+    """
+    with _quota_lock:
+        if _over_quota(db, who.user_id):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail=QUOTA_REACHED)
+        document = Document(
+            owner_id=who.user_id,
+            sha256=hashlib.sha256(data).hexdigest(),
+            byte_size=len(data),
+            page_count=page_count,
+            text_pages=sorted(pages),
+            content=data,
+        )
+        document_id = document.id  # read now: commit expires it, and touching it reopens a read
+        db.add(document)
+        audit(db, who.user_id, "document.upload", "document", document_id)
+        db.commit()
     return document_id
 
 
@@ -158,8 +179,27 @@ def _save_order(
     return _audited_out(db, who, order, "order.create")
 
 
-@router.post("/upload", status_code=status.HTTP_201_CREATED, openapi_extra=UPLOAD_BODY)
-def upload_order(who: Auth, db: Db, data: Upload, client: LlmClient) -> OrderOut:
+def _save_with_retry(
+    db: Session, who: Principal, document_id: str, decision: Decision, page_count: int
+) -> OrderOut:
+    """The fax is safe and the model has been paid for, so one lost write gets a second try."""
+    try:
+        return _save_order(db, who, document_id, decision, page_count)
+    except Exception as error:
+        db.rollback()
+        log.warning("order_save_failed", extra={"reason": type(error).__name__})
+    try:
+        return _save_order(db, who, document_id, decision, page_count)
+    except Exception as error:
+        db.rollback()
+        log.warning("order_save_failed", extra={"reason": type(error).__name__})
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"The file was saved as document {document_id}, but its order was not.",
+        ) from None
+
+
+def _process(who: Principal, db: Session, data: bytes, client: Any) -> OrderOut:
     try:
         parsed = read_pdf(data)
     except PdfRejected as rejected:
@@ -171,8 +211,22 @@ def upload_order(who: Auth, db: Db, data: Upload, client: LlmClient) -> OrderOut
     try:
         result = extract(data, parsed.pages, parsed.text_pages, client)
         decision = decide(result, parsed.pages, parsed.text_pages, utcnow().date())
-    except LLMError as error:
-        log.warning("extraction_failed", extra={"reason": str(error)})
+    except Exception as error:
+        # The Document is committed, so every failure from here on must still end in an Order.
+        # Only the type: a message can quote the document.
+        log.warning("extraction_failed", extra={"reason": type(error).__name__})
         decision = failed_decision()
 
-    return _save_order(db, who, document_id, decision, parsed.page_count)
+    return _save_with_retry(db, who, document_id, decision, parsed.page_count)
+
+
+@router.post("/upload", status_code=status.HTTP_201_CREATED, openapi_extra=UPLOAD_BODY)
+def upload_order(who: Auth, db: Db, data: Upload, client: LlmClient) -> OrderOut:
+    if not extraction_slots.acquire(blocking=False):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, detail=BUSY, headers={"Retry-After": "30"}
+        )
+    try:
+        return _process(who, db, data, client)
+    finally:
+        extraction_slots.release()

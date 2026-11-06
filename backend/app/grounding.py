@@ -11,23 +11,35 @@ from app.extraction_types import FIELD_NAMES, Evidenced, ExtractionResult, Verif
 from app.validators import is_placeholder
 
 CURLY_QUOTES = str.maketrans("‘’‚‛“”„‟", "''''\"\"\"\"")
+# A letter or digit, or something that joins them: `Smith` is only part of `Smith-Jones`.
+WORD_PART = r"(?:[^\W_]|[-'\u0300-\u036f])"
 
 
 def _normalize(text: str) -> str:
+    # Format characters first: invisible, so `Jan<ZWSP>e` is the word `Jane`, not `Jan` and `e`.
+    text = "".join(character for character in text if unicodedata.category(character) != "Cf")
     text = unicodedata.normalize("NFKC", text).translate(CURLY_QUOTES).lower()
     return " ".join(text.split())
 
 
-def _value_in_quote(value: str, quote: str) -> bool:
-    """Whole value only: `2/17/1961` must not pass on `12/17/1961`, nor `Jan` on `Jane`."""
+def _contains_whole(text: str, part: str) -> bool:
+    """`2/17/1961` must not pass on `12/17/1961`, nor `Jan` on `Jane`."""
+    return re.search(rf"(?<!{WORD_PART}){re.escape(part)}(?!{WORD_PART})", text) is not None
+
+
+def _value_in_quote(value: str, quote: str, name: str | None) -> bool:
     digits = re.sub(r"[\s-]", "", value)
-    if re.fullmatch(r"[0-9]{10}", digits):
-        # NPI-shaped. Dates can't reach this branch, so they still compare as printed.
-        return digits in re.sub(r"[^0-9]", "", quote)
-    return re.search(rf"(?<![^\W_]){re.escape(value)}(?![^\W_])", quote) is not None
+    if name == "provider_npi" and re.fullmatch(r"[0-9]{10}", digits):
+        # NPIs print grouped. Every other field compares as printed, so nothing can be spliced
+        # together from the digits of a date or phone number.
+        grouped = r"[\s-]*".join(digits)
+        return re.search(rf"(?<![0-9]){grouped}(?![0-9])", quote) is not None
+    return _contains_whole(quote, value)
 
 
-def verify_quote(field: Evidenced, pages: list[str], text_pages: set[int]) -> Verification:
+def verify_quote(
+    field: Evidenced, pages: list[str], text_pages: set[int], name: str | None = None
+) -> Verification:
     if is_placeholder(field.value):
         return Verification.not_applicable
     quote = _normalize(field.source_quote or "")
@@ -35,8 +47,8 @@ def verify_quote(field: Evidenced, pages: list[str], text_pages: set[int]) -> Ve
         return Verification.failed
     if field.page not in text_pages:
         return Verification.unverified
-    on_page = quote in _normalize(pages[field.page - 1])
-    if on_page and _value_in_quote(_normalize(field.value), quote):
+    on_page = _contains_whole(_normalize(pages[field.page - 1]), quote)
+    if on_page and _value_in_quote(_normalize(field.value), quote, name):
         return Verification.verified
     return Verification.failed
 
@@ -50,5 +62,5 @@ def quote_problems(result: ExtractionResult, pages: list[str], text_pages: set[i
     return [
         f"{name}: give a source_quote copied exactly from the cited PDF page, containing the value"
         for name in FIELD_NAMES
-        if verify_quote(getattr(result, name), pages, text_pages) == Verification.failed
+        if verify_quote(getattr(result, name), pages, text_pages, name) == Verification.failed
     ]
