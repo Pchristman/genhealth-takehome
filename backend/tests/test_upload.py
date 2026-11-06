@@ -1,5 +1,8 @@
 import asyncio
+import inspect
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 
 import anthropic
@@ -7,23 +10,29 @@ import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect as db_inspect
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, SQLModel, select
 from starlette.requests import Request
 
+from app import upload as upload_module
+from app.auth import Principal
+from app.body_limit import MULTIPART_OVERHEAD, TOO_LARGE
 from app.config import settings
 from app.db import get_session, make_engine
 from app.extraction_types import FIELD_NAMES
 from app.llm import get_llm_client
-from app.main import app
-from app.models import AuditEvent, Document, FieldEvidence, ReviewFlag
-from app.upload import read_upload
+from app.main import app, health
+from app.models import AuditEvent, Document, FieldEvidence, Order, ReviewFlag
+from app.upload import enforce_quota, read_upload
 from tests import pdf_fixtures as fx
-from tests.conftest import PASSWORD
+from tests.conftest import PASSWORD, SIGNUP_CODE
 from tests.llm_stub import StubClient, clean_result, evidenced, raw_reply, reply
 
 URL = "/v1/orders/upload"
 PATIENT_VALUES = (fx.FIRST_NAME, fx.LAST_NAME, fx.DOB, fx.PROVIDER, fx.NPI, "1962-03-14")
+BAD_LOCATOR = clean_result(patient_last_name=evidenced(fx.LAST_NAME, "Not on the page"))
 
 
 def upload(client, headers, data=None, filename="order.pdf", content_type="application/pdf"):
@@ -166,7 +175,7 @@ def test_upload_filename_not_stored_or_logged(client, auth_headers, stub_llm, db
     assert '"event": "request"' in output
     assert "Zebulon" not in output
     connection = db.connection()
-    for table in inspect(connection).get_table_names():
+    for table in db_inspect(connection).get_table_names():
         for row in connection.execute(text(f'SELECT * FROM "{table}"')):
             for cell in row:
                 if isinstance(cell, bytes):
@@ -310,7 +319,7 @@ def test_magic_bytes_are_checked_before_parsing(client, auth_headers, stub_llm, 
     def must_not_run(*_args, **_kwargs):
         raise AssertionError("the parser saw a non-PDF")
 
-    monkeypatch.setattr("app.pdf_intake.pdfplumber.open", must_not_run)
+    monkeypatch.setattr("app.pdf_intake.subprocess.run", must_not_run)
     assert upload(client, auth_headers(), b"plain text").status_code == 415
     assert stub.calls == []
 
@@ -369,7 +378,8 @@ def test_body_read_stops_at_the_limit(monkeypatch):
         asyncio.run(read_upload(Request(scope, receive), None))
 
     assert caught.value.status_code == 413
-    assert sent <= 12  # 1 KB allowed plus the multipart overhead, then it stops asking
+    # 1 KB allowed plus the multipart overhead, then it stops asking.
+    assert sent <= (1_000 + MULTIPART_OVERHEAD) // len(chunk) + 2
 
 
 def test_body_read_returns_at_most_one_byte_past_the_limit(monkeypatch):
@@ -431,7 +441,8 @@ def test_no_session_held_during_llm_call(file_db):
     app.dependency_overrides[get_llm_client] = lambda: stub
     client = TestClient(app, raise_server_exceptions=False)
     email = "ada@example.com"
-    client.post("/auth/register", json={"email": email, "password": PASSWORD})
+    credentials = {"email": email, "password": PASSWORD, "signup_code": SIGNUP_CODE}
+    client.post("/auth/register", json=credentials)
     token = client.post("/auth/token", data={"username": email, "password": PASSWORD})
     headers = {"Authorization": f"Bearer {token.json()['access_token']}"}
 
@@ -475,3 +486,276 @@ def test_upload_logs_contain_no_patient_values(client, auth_headers, stub_llm, c
     assert '"event": "extraction_failed"' in output
     for value in PATIENT_VALUES:
         assert value not in output
+
+
+def _multipart(total: int) -> bytes:
+    """A one-file body of exactly `total` bytes, nearly all of it the file."""
+    head = b'--x\r\nContent-Disposition: form-data; name="file"; filename="a.pdf"\r\n\r\n'
+    tail = b"\r\n--x--\r\n"
+    return head + b"y" * (total - len(head) - len(tail)) + tail
+
+
+def _read_body(body: bytes) -> bytes:
+    stream = BytesIO(body)
+
+    async def receive():
+        piece = stream.read(64 * 1024)
+        return {"type": "http.request", "body": piece, "more_body": bool(piece)}
+
+    header = (b"content-type", b"multipart/form-data; boundary=x")
+    scope = {"type": "http", "method": "POST", "headers": [header]}
+    return asyncio.run(read_upload(Request(scope, receive), None))
+
+
+def test_body_read_and_the_middleware_agree_on_the_limit(monkeypatch):
+    """A body the middleware lets through must not be refused by the route with other wording."""
+    monkeypatch.setattr(settings, "upload_max_bytes", 1_000)
+    limit = 1_000 + MULTIPART_OVERHEAD
+
+    assert len(_read_body(_multipart(limit))) == 1_001  # read_pdf gets enough to refuse it
+
+    with pytest.raises(HTTPException) as caught:
+        _read_body(_multipart(limit + 1))
+    assert caught.value.status_code == 413
+    assert caught.value.detail == TOO_LARGE
+
+
+def test_searchable_scan_goes_to_review_with_one_call(client, auth_headers, stub_llm):
+    # The model copies the OCR's misreading, which sits word for word in the hidden layer.
+    result = clean_result(
+        patient_last_name=evidenced(fx.GARBLED_LAST_NAME, fx.GARBLED_LAST_LINE),
+    )
+    stub = stub_llm(reply(result), reply(result), reply(result))
+
+    body = upload(client, auth_headers(), fx.searchable_scan_pdf()).json()
+
+    assert body["status"] == "needs_review"
+    assert {row["verification"] for row in body["evidence"]} == {"unverified"}
+    assert flag_codes(body) == {"unverified_quote"}
+    assert len(stub.calls) == 1
+
+
+def test_stamped_header_over_a_scan_needs_one_call(client, auth_headers, stub_llm):
+    stub = stub_llm(reply(clean_result()), reply(clean_result()), reply(clean_result()))
+
+    body = upload(client, auth_headers(), fx.stamped_scan_pdf()).json()
+
+    assert len(stub.calls) == 1
+    assert body["status"] == "needs_review"
+    assert {row["verification"] for row in body["evidence"]} == {"unverified"}
+
+
+def test_rotated_page_needs_one_call(client, auth_headers, stub_llm):
+    stub = stub_llm(reply(BAD_LOCATOR), reply(BAD_LOCATOR), reply(BAD_LOCATOR))
+
+    body = upload(client, auth_headers(), fx.rotated_pdf()).json()
+
+    assert len(stub.calls) == 1
+    assert body["status"] == "needs_review"
+
+
+def test_clean_text_pdf_stays_verified(client, auth_headers, stub_llm):
+    stub = stub_llm(reply(clean_result()))
+
+    body = upload(client, auth_headers()).json()
+
+    assert len(stub.calls) == 1
+    assert body["status"] == "approved"
+    assert {row["verification"] for row in body["evidence"]} == {"verified"}
+
+
+def test_flate_bomb_upload_is_a_422_that_stores_nothing(
+    client, auth_headers, stub_llm, db, monkeypatch
+):
+    stub = stub_llm()
+    headers = auth_headers()
+    monkeypatch.setattr(settings, "pdf_parse_timeout_seconds", 2)
+
+    response = upload(client, headers, fx.flate_bomb_pdf())
+
+    assert response.status_code == 422
+    assert stub.calls == []
+    assert db.exec(select(Document)).all() == []
+
+
+@pytest.mark.parametrize("target", ["extract", "decide"])
+def test_any_failure_after_the_document_commit_is_a_flagged_order(
+    client, auth_headers, stub_llm, db, monkeypatch, captured_logs, target
+):
+    stub_llm(reply(clean_result()))
+
+    def explode(*_args, **_kwargs):
+        raise KeyError(fx.LAST_NAME)
+
+    monkeypatch.setattr(f"app.upload.{target}", explode)
+    data = fx.clean_text_pdf()
+
+    response = upload(client, auth_headers(), data)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "needs_review"
+    assert flag_codes(body) == {"extraction_failed"}
+    assert db.get(Document, body["document_id"]).content == data
+    output = captured_logs()
+    assert '"reason": "KeyError"' in output
+    assert fx.LAST_NAME not in output
+
+
+def failing_audit(monkeypatch, failures: int) -> None:
+    """Fails where _save_order's rows are already pending, as a locked database would."""
+    real = upload_module._audited_out
+    remaining = [failures]
+
+    def flaky(*args, **kwargs):
+        if remaining[0] > 0:
+            remaining[0] -= 1
+            raise OperationalError("COMMIT", {}, Exception(fx.LAST_NAME))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(upload_module, "_audited_out", flaky)
+
+
+def test_saving_the_order_is_retried_once(client, auth_headers, stub_llm, db, monkeypatch):
+    stub = stub_llm(reply(clean_result()))
+    headers = auth_headers()
+    failing_audit(monkeypatch, failures=1)
+
+    response = upload(client, headers)
+
+    assert response.status_code == 201
+    assert len(stub.calls) == 1
+    assert len(db.exec(select(Order)).all()) == 1  # the failed try's rows went with its rollback
+    assert len(db.exec(select(FieldEvidence)).all()) == len(FIELD_NAMES)
+
+
+def test_a_second_save_failure_is_a_503_that_names_the_document(
+    client, auth_headers, stub_llm, db, monkeypatch, captured_logs
+):
+    stub_llm(reply(clean_result()))
+    headers = auth_headers()
+    failing_audit(monkeypatch, failures=2)
+    data = fx.clean_text_pdf()
+
+    response = upload(client, headers, data)
+
+    assert response.status_code == 503
+    document = db.exec(select(Document)).one()
+    assert document.content == data
+    assert document.id in response.json()["detail"]
+    assert db.exec(select(Order)).all() == []
+    assert '"reason": "OperationalError"' in captured_logs()
+    assert fx.LAST_NAME not in captured_logs()
+    assert fx.LAST_NAME not in response.text
+
+
+def _free_slots() -> int:
+    taken = 0
+    while upload_module.extraction_slots.acquire(blocking=False):
+        taken += 1
+    for _ in range(taken):
+        upload_module.extraction_slots.release()
+    return taken
+
+
+def test_concurrent_uploads_cannot_pass_the_quota(
+    client, auth_headers, stub_llm, engine, monkeypatch
+):
+    uploads = 8
+    stub_llm(*[reply(clean_result()) for _ in range(uploads)])
+    monkeypatch.setattr(settings, "quota_user_daily", 2)
+    headers = auth_headers()
+
+    # All past the early check, none stored yet: the window the race goes through.
+    real = upload_module.read_pdf
+    everyone_checked = threading.Barrier(uploads, timeout=30)
+
+    def wait_for_everyone(data):
+        parsed = real(data)
+        everyone_checked.wait()
+        return parsed
+
+    monkeypatch.setattr(upload_module, "read_pdf", wait_for_everyone)
+
+    with ThreadPoolExecutor(uploads) as pool:
+        codes = sorted(pool.map(lambda _: upload(client, headers).status_code, range(uploads)))
+
+    assert codes == [201, 201, 429, 429, 429, 429, 429, 429]
+    with Session(engine) as check:
+        assert len(check.exec(select(Document)).all()) == 2
+
+
+def test_busy_server_refuses_before_storing_or_spending_quota(
+    client, auth_headers, stub_llm, db, monkeypatch
+):
+    stub = stub_llm(reply(clean_result()))
+    monkeypatch.setattr(settings, "quota_user_daily", 1)
+    headers = auth_headers()
+    for _ in range(8):
+        assert upload_module.extraction_slots.acquire(blocking=False)
+    try:
+        response = upload(client, headers)
+    finally:
+        for _ in range(8):
+            upload_module.extraction_slots.release()
+
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "30"
+    assert stub.calls == []
+    assert db.exec(select(Document)).all() == []
+    assert upload(client, headers).status_code == 201
+
+
+def test_there_are_eight_extraction_slots():
+    assert _free_slots() == 8
+
+
+def test_the_slot_comes_back_after_every_way_out(client, auth_headers, stub_llm, monkeypatch):
+    stub_llm(reply(clean_result()), reply(clean_result()))
+    headers = auth_headers()
+
+    assert upload(client, headers).status_code == 201
+    assert _free_slots() == 8
+
+    assert upload(client, headers, b"not a pdf").status_code == 415
+    assert _free_slots() == 8
+
+    failing_audit(monkeypatch, failures=2)
+    assert upload(client, headers).status_code == 503
+    assert _free_slots() == 8
+
+
+def test_quota_refused_inside_the_store_gives_the_slot_back(
+    client, auth_headers, stub_llm, monkeypatch
+):
+    stub_llm(reply(clean_result()))
+    headers = auth_headers()
+    # Over quota only by the time of the store: the early check has already let this through.
+    real = upload_module.read_pdf
+
+    def quota_fills_up_meanwhile(data):
+        parsed = real(data)
+        monkeypatch.setattr(settings, "quota_user_daily", 0)
+        return parsed
+
+    monkeypatch.setattr(upload_module, "read_pdf", quota_fills_up_meanwhile)
+
+    assert upload(client, headers).status_code == 429
+    assert _free_slots() == 8
+
+
+def test_health_does_not_need_a_threadpool_thread():
+    assert inspect.iscoroutinefunction(health)
+
+
+def test_two_file_parts_are_a_422(client, auth_headers, stub_llm):
+    stub = stub_llm()
+    part = ("a.pdf", fx.clean_text_pdf(), "application/pdf")
+    response = client.post(URL, headers=auth_headers(), files=[("file", part), ("file", part)])
+    assert response.status_code == 422
+    assert stub.calls == []
+
+
+def test_no_transaction_stays_open_after_the_quota_check(db):
+    enforce_quota(Principal(user_id="someone", email="a@example.com"), db)
+    assert not db.in_transaction()

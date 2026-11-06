@@ -90,5 +90,5 @@ async def request_context(request: Request, call_next):
 
 
 @app.get("/health", tags=["ops"])
-def health() -> dict[str, str]:
+async def health() -> dict[str, str]:  # async: a full threadpool can't hold this up
     return {"status": "ok"}

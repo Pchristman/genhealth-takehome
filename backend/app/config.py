@@ -25,8 +25,10 @@ class Settings(BaseSettings):
     llm_model: str = "claude-opus-5-5"
     llm_max_attempts: int = 3
     llm_timeout_seconds: float = 120.0
+    llm_deadline_seconds: float = 240.0  # Railway closes a request after 5 minutes without data
     upload_max_bytes: int = 20_000_000
     upload_max_pages: int = 100
+    pdf_parse_timeout_seconds: float = 30.0
     quota_user_daily: int = 20
     quota_global_daily: int = 100
     log_level: str = "INFO"
