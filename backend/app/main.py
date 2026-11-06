@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm.exc import StaleDataError
 
-from app import auth, orders
+from app import auth, orders, review, spa, upload
 from app.body_limit import BodyLimitMiddleware
 from app.config import settings
 from app.db import init_db
@@ -33,6 +33,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Order Intake API", lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(orders.router)
+app.include_router(upload.router)
 # Added before request_context, which puts it inside: a 413 still gets a request id and a log line.
 app.add_middleware(BodyLimitMiddleware)
 
@@ -89,5 +90,9 @@ async def request_context(request: Request, call_next):
 
 
 @app.get("/health", tags=["ops"])
-def health() -> dict[str, str]:
+async def health() -> dict[str, str]:  # async: a full threadpool can't hold this up
     return {"status": "ok"}
+
+
+app.include_router(review.router)
+app.add_exception_handler(404, spa.serve_or_404)

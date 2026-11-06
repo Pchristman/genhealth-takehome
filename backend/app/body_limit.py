@@ -17,9 +17,14 @@ UPLOAD_ROUTE = ("POST", "/v1/orders/upload")
 TOO_LARGE = "Request body too large."
 
 
+def upload_body_limit() -> int:
+    """One number for the middleware and the upload route's own bounded read."""
+    return settings.upload_max_bytes + MULTIPART_OVERHEAD
+
+
 def _limit_for(scope: Scope) -> int:
     if (scope["method"], scope["path"]) == UPLOAD_ROUTE:
-        return settings.upload_max_bytes + MULTIPART_OVERHEAD
+        return upload_body_limit()
     return BODY_LIMIT
 
 

@@ -1,0 +1,564 @@
+:root {
+  color-scheme: light dark;
+
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #d5d9e0;
+  --text: #1c2230;
+  --muted: #566072;
+  --accent: #1f5fbf;
+  --accent-text: #ffffff;
+  --accent-hover: #184c99;
+  --focus: #1f5fbf;
+  --danger: #b3261e;
+  --danger-text: #ffffff;
+  --quote: #eef1f5;
+
+  --green-bg: #dcf3e4;
+  --green-text: #14572e;
+  --amber-bg: #fdf0cf;
+  --amber-text: #6a4a00;
+  --red-bg: #fbe0dd;
+  --red-text: #8a1c15;
+  --grey-bg: #e6e9ee;
+  --grey-text: #3f4859;
+
+  --page-width: 72rem;
+
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b;
+    --surface: #1b2029;
+    --border: #363e4c;
+    --text: #e8ebf0;
+    --muted: #a3adbd;
+    --accent: #7fb0f5;
+    --accent-text: #0e1420;
+    --accent-hover: #a3c7f8;
+    --focus: #a3c7f8;
+    --danger: #f19a92;
+    --danger-text: #2a0b08;
+    --quote: #252b36;
+
+    --green-bg: #173a26;
+    --green-text: #a6e4bd;
+    --amber-bg: #3f3210;
+    --amber-text: #f4d98c;
+    --red-bg: #47201d;
+    --red-text: #f8bdb7;
+    --grey-bg: #2b323e;
+    --grey-text: #c6cdd9;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
+  scrollbar-gutter: stable; /* a long page and a short one keep the same content position */
+}
+
+body {
+  margin: 0;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+h1,
+h2,
+h3,
+p,
+blockquote {
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.125rem;
+}
+
+h2 {
+  font-size: 1.125rem;
+}
+
+h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+code {
+  font-size: 0.75rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--quote);
+  color: var(--muted);
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+h2:focus-visible {
+  outline-offset: 4px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.875rem;
+}
+
+/* Layout */
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  /* Lines the bar's content up with the page below it on a wide screen. */
+  padding: 0.75rem max(1rem, calc((100% - var(--page-width)) / 2 + 1rem));
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar-user {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.page {
+  width: 100%;
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.card {
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.narrow {
+  max-width: 26rem;
+  margin: 1.5rem auto 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.stack > *,
+.stack-tight > * {
+  min-width: 0;
+}
+
+.stack-tight {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Forms */
+.field-input {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.field-input.inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+input,
+select {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+}
+
+input[type='file'] {
+  padding: 0.35rem;
+}
+
+.field-input.inline select {
+  width: auto;
+}
+
+button {
+  min-height: 2.5rem;
+  padding: 0.4rem 0.9rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.quiet {
+  color: var(--text);
+  background: transparent;
+  border-color: var(--muted);
+}
+
+button.quiet:hover:not(:disabled) {
+  background: var(--quote);
+  border-color: var(--muted);
+}
+
+button.danger {
+  color: var(--danger-text);
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  filter: brightness(0.92);
+}
+
+button.danger-quiet {
+  color: var(--danger);
+  background: transparent;
+  border-color: var(--danger);
+}
+
+button.danger-quiet:hover:not(:disabled) {
+  background: var(--red-bg);
+  border-color: var(--danger);
+}
+
+button.link {
+  justify-self: start;
+  min-height: 0;
+  padding: 0.25rem 0;
+  color: var(--accent);
+  background: none;
+  border: none;
+  font-weight: 500;
+  text-decoration: underline;
+}
+
+button.link:hover:not(:disabled) {
+  background: none;
+  color: var(--accent-hover);
+}
+
+a {
+  color: var(--accent);
+}
+
+progress {
+  width: 100%;
+  height: 0.5rem;
+  accent-color: var(--accent);
+}
+
+/* Messages */
+.alert {
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  background: var(--grey-bg);
+  color: var(--grey-text);
+}
+
+.alert-error {
+  background: var(--red-bg);
+  color: var(--red-text);
+}
+
+.alert-warning {
+  background: var(--amber-bg);
+  color: var(--amber-text);
+  border-left: 4px solid currentColor;
+}
+
+/* Badges: every state has its own word, so none depends on color alone. */
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: 999px;
+  background: var(--grey-bg);
+  color: var(--grey-text);
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+
+.status-approved,
+.verification-verified {
+  background: var(--green-bg);
+  color: var(--green-text);
+}
+
+.status-needs_review,
+.verification-unverified {
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+
+.status-denied,
+.verification-failed {
+  background: var(--red-bg);
+  color: var(--red-text);
+}
+
+/* Order list */
+.order-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+button.order-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-weight: 400;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border-color: var(--border);
+}
+
+button.order-row:hover:not(:disabled) {
+  background: var(--quote);
+  border-color: var(--muted);
+}
+
+.order-main {
+  display: grid;
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.order-side {
+  display: grid;
+  justify-items: end;
+  gap: 0.15rem;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* Order detail */
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+}
+
+.field-card {
+  display: grid;
+  align-content: start;
+  justify-items: stretch;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.field-card > button {
+  justify-self: start;
+}
+
+.value {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.value-empty {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--muted);
+}
+
+blockquote {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--quote);
+  border-left: 3px solid var(--border);
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
+
+.flags {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flag {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.875rem;
+  background: var(--amber-bg);
+  color: var(--amber-text);
+  border-radius: 6px;
+}
+
+.flag code {
+  background: transparent;
+  color: inherit;
+}
+
+.flag-resolved {
+  background: var(--grey-bg);
+  color: var(--grey-text);
+}
+
+.flag-resolved > span:first-child {
+  text-decoration: line-through;
+}
+
+.upload form {
+  margin-top: 0.75rem;
+}
+
+.orders-layout,
+.detail {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.orders-layout > *,
+.detail > * {
+  min-width: 0;
+}
+
+/* Desktop: the upload sits beside the list, and the review panel stays beside the fields, so the
+   flags and Approve are in view together. Phones keep one column in document order. */
+@media (min-width: 64rem) {
+  .narrow {
+    margin-top: 4rem;
+  }
+
+  .orders-layout {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    align-items: start;
+  }
+
+  .orders-layout > .upload {
+    grid-area: 1 / 2;
+  }
+
+  .detail.with-review {
+    grid-template-columns: minmax(0, 1fr) 24rem;
+    align-items: start;
+  }
+
+  .review-panel {
+    grid-area: 1 / 2;
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+  }
+
+  /* Five cards: pairs with the date of birth between them, so patient and provider read as rows. */
+  .with-review .fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .with-review .field-card:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  /* No review panel: three patient cards above two provider cards. */
+  .detail:not(.with-review) .fields {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .detail:not(.with-review) .field-card {
+    grid-column: span 2;
+  }
+
+  .detail:not(.with-review) .field-card:nth-child(n + 4) {
+    grid-column: span 3;
+  }
+}
