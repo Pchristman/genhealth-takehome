@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app import auth
+from app import auth, orders
 from app.config import settings
 from app.db import init_db
 from app.logging_config import configure_logging, request_id_var
@@ -25,6 +25,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Order Intake API", lifespan=lifespan)
 app.include_router(auth.router)
+app.include_router(orders.router)
 
 
 @app.exception_handler(RequestValidationError)
