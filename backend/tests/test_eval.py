@@ -39,6 +39,7 @@ def replies(**swaps) -> list:
         "missing_field": clean_result(patient_dob=evidenced(None, None, None)),
         "injected": clean_result(embedded_instructions_found=True),
         "scan": clean_result(),
+        "searchable_scan": clean_result(),
         "blank_page": clean_result(),
         **swaps,
     }
@@ -92,6 +93,8 @@ def test_fixtures_fit_within_the_daily_quota():
 def test_every_generated_fixture_is_evaluated():
     used = {build.__name__ for build, _ in FIXTURES.values()}
     used |= {"many_pages_pdf"}  # takes a page count, so FIXTURES holds a wrapper
+    # Unit-test inputs: a parser bomb, and helpers that take arguments or need a page layout.
+    used |= {"flate_bomb_pdf", "image_over_text_pdf", "rotated_pdf", "stamped_scan_pdf"}
     builders = {
         name
         for name, value in vars(fx).items()

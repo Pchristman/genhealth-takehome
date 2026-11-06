@@ -67,6 +67,10 @@ FIXTURES: dict[str, tuple[Callable[[], bytes], dict]] = {
         fx.scan_pdf,
         {**_NEEDS_REVIEW, "verification": "unverified", "flags": ["unverified_quote"]},
     ),
+    "searchable_scan": (
+        fx.searchable_scan_pdf,
+        {**_NEEDS_REVIEW, "verification": "unverified", "flags": ["unverified_quote"]},
+    ),
     "blank_page": (fx.blank_page_pdf, _CLEAN),
     # Refused before the model is called, so these three use no quota.
     "encrypted": (fx.encrypted_pdf, {"http_status": 422}),
