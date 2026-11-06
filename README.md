@@ -2,7 +2,7 @@
 
 A Python API that turns an uploaded DME order PDF into an Order. It extracts the patient's first name, last name and date of birth, and the ordering provider's name and NPI. It keeps the source quote and page of each value, and sends anything doubtful to a person instead of guessing.
 
-- Public URL: https://api-production-7851.up.railway.app (Swagger at `/docs`)
+- Public URL: https://pchristman-genhealth.up.railway.app (Swagger at `/docs`)
 - Repo: https://github.com/Pchristman/genhealth-takehome
 - Design: [docs/design-spec.md](docs/design-spec.md)
 - Plan: [docs/implementation-plan.md](docs/implementation-plan.md)
@@ -88,7 +88,7 @@ It registers a throwaway user with a generated password and prints one line per 
 The upload flow with curl. On Windows, run this in Git Bash.
 
 ```bash
-BASE=https://api-production-7851.up.railway.app
+BASE=https://pchristman-genhealth.up.railway.app
 
 curl -X POST "$BASE/auth/register" \
   -H "Content-Type: application/json" \
