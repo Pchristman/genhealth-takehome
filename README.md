@@ -101,7 +101,7 @@ curl -X POST "$BASE/auth/register" \
 
 TOKEN=$(curl -s -X POST "$BASE/auth/token" \
   -d "username=you@example.com" \
-  -d "password=at-least-12-characters" | python -c "import json, sys; print(json.load(sys.stdin)['access_token'])")
+  -d "password=at-least-12-characters" | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
 
 curl -X POST "$BASE/v1/orders/upload" \
   -H "Authorization: Bearer $TOKEN" \
