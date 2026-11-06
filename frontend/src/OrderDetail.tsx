@@ -39,6 +39,10 @@ const EDIT_LABELS: Record<FieldName, string> = {
   provider_npi: 'Provider NPI (10 digits)',
 }
 
+function flagText(flag: Flag): string {
+  return FLAG_TEXT[flag.code] ?? 'This needs a person to check it.'
+}
+
 function Flags({ flags }: { flags: Flag[] }) {
   if (flags.length === 0) {
     return null
@@ -47,8 +51,7 @@ function Flags({ flags }: { flags: Flag[] }) {
     <ul className="flags">
       {flags.map((flag) => (
         <li key={flag.id} className={flag.resolved_at ? 'flag flag-resolved' : 'flag'}>
-          <span>{FLAG_TEXT[flag.code] ?? 'This needs a person to check it.'}</span>{' '}
-          <code>{flag.code}</code>
+          <span>{flagText(flag)}</span> <code>{flag.code}</code>
           {flag.resolved_at && <span className="muted small"> Resolved by an edit.</span>}
         </li>
       ))}
@@ -56,12 +59,14 @@ function Flags({ flags }: { flags: Flag[] }) {
   )
 }
 
+// Once a person changes a value, the check says nothing about it, only about what was printed.
 function VerificationBadge({ evidence }: { evidence: Evidence }) {
   const known = VERIFICATION[evidence.verification]
+  const label = known?.label ?? evidence.verification
   return (
     <div className="badge-row">
-      <span className={`badge verification-${evidence.verification}`}>
-        {known?.label ?? evidence.verification}
+      <span className={evidence.corrected ? 'badge' : `badge verification-${evidence.verification}`}>
+        {evidence.corrected ? `As printed: ${label}` : label}
       </span>
       {known && <span className="muted small">{known.meaning}</span>}
     </div>
@@ -74,6 +79,7 @@ interface FieldCardProps {
   canEdit: boolean
   editing: boolean
   busy: boolean
+  locked: boolean
   error: string
   onEdit: () => void
   onCancel: () => void
@@ -81,12 +87,13 @@ interface FieldCardProps {
 }
 
 function FieldCard(props: FieldCardProps) {
-  const { order, field, canEdit, editing, busy, error, onEdit, onCancel, onSave } = props
+  const { order, field, canEdit, editing, busy, locked, error, onEdit, onCancel, onSave } = props
   const [draft, setDraft] = useState(order[field] ?? '')
   const evidence = order.evidence.find((row) => row.field === field)
   const flags = order.flags.filter((flag) => flag.field === field)
   const value = order[field]
   const printed = evidence?.extracted_value
+  const showPrinted = evidence?.corrected || (printed && printed !== value)
   const inputId = `edit-${field}`
 
   function submit(event: FormEvent) {
@@ -133,13 +140,17 @@ function FieldCard(props: FieldCardProps) {
 
       {evidence ? (
         <>
-          <VerificationBadge evidence={evidence} />
-          {evidence.corrected && <p className="small">Corrected by a person.</p>}
-          {printed && printed !== value && (
+          {evidence.corrected && (
+            <div className="badge-row">
+              <span className="badge">Edited by a person</span>
+            </div>
+          )}
+          {showPrinted && (
             <p className="small">
-              <span className="muted">As printed:</span> {printed}
+              <span className="muted">As printed:</span> {printed ?? 'No value'}
             </p>
           )}
+          <VerificationBadge evidence={evidence} />
           {evidence.source_quote && (
             <blockquote>
               <span className="muted small">Source quote</span>
@@ -159,11 +170,24 @@ function FieldCard(props: FieldCardProps) {
       <Flags flags={flags} />
 
       {canEdit && !editing && (
-        <button type="button" className="quiet" disabled={busy} onClick={onEdit}>
+        <button type="button" className="quiet" disabled={busy || locked} onClick={onEdit}>
           Edit
         </button>
       )}
     </article>
+  )
+}
+
+function OpenFlags({ flags }: { flags: Flag[] }) {
+  return (
+    <ul className="flags" aria-label="Open flags">
+      {flags.map((flag) => (
+        <li key={flag.id} className="flag">
+          <strong>{FIELD_LABELS[flag.field as FieldName] ?? 'Whole document'}:</strong>{' '}
+          {flagText(flag)}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -185,10 +209,11 @@ export function OrderDetail({ client, orderId, onBack }: Props) {
   const [fieldError, setFieldError] = useState('')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState<FieldName | null>(null)
-  const [confirmingDeny, setConfirmingDeny] = useState(false)
+  const [confirming, setConfirming] = useState<Decision | null>(null)
   const [pdfBusy, setPdfBusy] = useState(false)
   const [blockedPdfUrl, setBlockedPdfUrl] = useState('')
   const pdfUrl = useRef('')
+  const mounted = useRef(false)
   const alertRef = useRef<HTMLParagraphElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
@@ -200,10 +225,12 @@ export function OrderDetail({ client, orderId, onBack }: Props) {
       (loaded) => {
         if (current) {
           setOrder(loaded)
+          setLoadError('')
         }
       },
       (failure: unknown) => {
         if (current) {
+          setOrder(null)
           setLoadError(messageOf(failure))
         }
       },
@@ -226,20 +253,23 @@ export function OrderDetail({ client, orderId, onBack }: Props) {
     }
   }, [actionError])
 
-  useEffect(
-    () => () => {
+  // Logging out unmounts this too, so a patient's PDF never outlives the session that opened it.
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
       if (pdfUrl.current) {
         URL.revokeObjectURL(pdfUrl.current)
+        pdfUrl.current = ''
       }
-    },
-    [],
-  )
+    }
+  }, [])
 
   // Someone else changed the Order, so what's on screen is out of date: say so and show the truth.
   async function showConflict(failure: unknown) {
     setActionError(messageOf(failure))
     setEditing(null)
-    setConfirmingDeny(false)
+    setConfirming(null)
     setOrder(await load())
   }
 
@@ -250,7 +280,7 @@ export function OrderDetail({ client, orderId, onBack }: Props) {
     try {
       setOrder(await work())
       setEditing(null)
-      setConfirmingDeny(false)
+      setConfirming(null)
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 409) {
         await showConflict(failure).catch(() => undefined)
@@ -275,15 +305,20 @@ export function OrderDetail({ client, orderId, onBack }: Props) {
     setActionError('')
     try {
       const blob = await client.pdf(orderId)
+      if (!mounted.current) {
+        opened?.close()
+        return
+      }
       if (pdfUrl.current) {
         URL.revokeObjectURL(pdfUrl.current)
       }
-      pdfUrl.current = URL.createObjectURL(blob)
+      const url = URL.createObjectURL(blob)
+      pdfUrl.current = url
       if (opened) {
-        opened.location.href = pdfUrl.current
-      } else {
-        setBlockedPdfUrl(pdfUrl.current)
+        opened.location.href = url
       }
+      // Always set: the link from an earlier click points at the URL revoked just above.
+      setBlockedPdfUrl(opened ? '' : url)
     } catch (failure) {
       opened?.close()
       setActionError(messageOf(failure))
@@ -312,9 +347,11 @@ export function OrderDetail({ client, orderId, onBack }: Props) {
   const needsReview = order.status === 'needs_review'
   const scanned = order.evidence.some((row) => row.verification === 'unverified')
   const missing = FIELDS.filter((field) => order[field] === null)
-  const openFlags = order.flags.filter((flag) => !flag.resolved_at).length
+  const openFlags = order.flags.filter((flag) => !flag.resolved_at)
   const documentFlags = order.flags.filter((flag) => flag.field === null)
   const name = [order.patient_first_name, order.patient_last_name].filter(Boolean).join(' ')
+  const editOpen = editing !== null
+  const flagCount = `${openFlags.length} open ${openFlags.length === 1 ? 'flag' : 'flags'}`
 
   return (
     <div className="stack">
@@ -358,86 +395,98 @@ export function OrderDetail({ client, orderId, onBack }: Props) {
         </div>
       )}
 
-      <Flags flags={documentFlags} />
+      {!needsReview && <Flags flags={documentFlags} />}
 
-      {needsReview && (
-        <section className="card stack-tight">
-          <h2>Review</h2>
-          {missing.length > 0 && (
-            <p className="muted small">
-              Every field needs a value before approval. Missing:{' '}
-              {missing.map((field) => FIELD_LABELS[field]).join(', ')}.
-            </p>
-          )}
-          {openFlags > 0 && missing.length === 0 && (
-            <p className="muted small">
-              You can approve with open flags. They stay on the record.
-            </p>
-          )}
-          {confirmingDeny ? (
-            <div className="stack-tight">
-              <p>Deny this order? This can't be undone.</p>
+      <div className={needsReview ? 'detail with-review' : 'detail'}>
+        {needsReview && (
+          <section className="card stack-tight review-panel">
+            <h2>Review</h2>
+            {missing.length > 0 && (
+              <p className="muted small">
+                Every field needs a value before approval. Missing:{' '}
+                {missing.map((field) => FIELD_LABELS[field]).join(', ')}.
+              </p>
+            )}
+            {openFlags.length > 0 && <OpenFlags flags={openFlags} />}
+            {openFlags.length > 0 && missing.length === 0 && (
+              <p className="muted small">
+                You can approve with open flags. They stay on the record.
+              </p>
+            )}
+            {confirming ? (
+              <div className="stack-tight">
+                <p>
+                  {confirming === 'deny'
+                    ? "Deny this order? This can't be undone."
+                    : `Approve with ${flagCount}? This can't be undone.`}
+                </p>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className={confirming === 'deny' ? 'danger' : undefined}
+                    disabled={busy}
+                    onClick={() => decide(confirming)}
+                  >
+                    {confirming === 'deny' ? 'Yes, deny' : 'Yes, approve'}
+                  </button>
+                  <button
+                    type="button"
+                    className="quiet"
+                    autoFocus
+                    disabled={busy}
+                    onClick={() => setConfirming(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
               <div className="button-row">
                 <button
                   type="button"
-                  className="danger"
-                  disabled={busy}
-                  onClick={() => decide('deny')}
+                  disabled={busy || editOpen || missing.length > 0}
+                  onClick={() =>
+                    openFlags.length > 0 ? setConfirming('approve') : decide('approve')
+                  }
                 >
-                  Yes, deny
+                  Approve
                 </button>
                 <button
                   type="button"
-                  className="quiet"
-                  autoFocus
-                  disabled={busy}
-                  onClick={() => setConfirmingDeny(false)}
+                  className="danger-quiet"
+                  disabled={busy || editOpen}
+                  onClick={() => setConfirming('deny')}
                 >
-                  Cancel
+                  Deny
                 </button>
               </div>
-            </div>
-          ) : (
-            <div className="button-row">
-              <button
-                type="button"
-                disabled={busy || missing.length > 0}
-                onClick={() => decide('approve')}
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                className="danger-quiet"
-                disabled={busy}
-                onClick={() => setConfirmingDeny(true)}
-              >
-                Deny
-              </button>
-            </div>
-          )}
-        </section>
-      )}
+            )}
+            {editOpen && <p className="muted small">Save or cancel your edit first.</p>}
+          </section>
+        )}
 
-      <section className="fields" aria-label="Order fields">
-        {FIELDS.map((field) => (
-          <FieldCard
-            key={`${field}:${order[field]}:${editing === field}`}
-            order={order}
-            field={field}
-            canEdit={needsReview}
-            editing={editing === field}
-            busy={busy}
-            error={editing === field ? fieldError : ''}
-            onEdit={() => {
-              setEditing(field)
-              setFieldError('')
-            }}
-            onCancel={() => setEditing(null)}
-            onSave={(value) => void act(() => client.editField(orderId, field, value))}
-          />
-        ))}
-      </section>
+        <section className="fields" aria-label="Order fields">
+          {FIELDS.map((field) => (
+            <FieldCard
+              key={`${field}:${order[field]}:${editing === field}`}
+              order={order}
+              field={field}
+              canEdit={needsReview}
+              editing={editing === field}
+              busy={busy}
+              locked={editOpen}
+              error={editing === field ? fieldError : ''}
+              onEdit={() => {
+                setEditing(field)
+                setFieldError('')
+                setConfirming(null)
+              }}
+              onCancel={() => setEditing(null)}
+              onSave={(value) => void act(() => client.editField(orderId, field, value))}
+            />
+          ))}
+        </section>
+      </div>
     </div>
   )
 }

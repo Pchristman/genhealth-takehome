@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { PAGE_SIZE, STATUS_LABELS, messageOf } from './api'
 import type { Client, Order, OrderPage, OrderStatus } from './api'
@@ -21,6 +21,14 @@ function Upload({ client, onOpen }: Pick<Props, 'client' | 'onOpen'>) {
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const mounted = useRef(false)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -31,7 +39,11 @@ function Upload({ client, onOpen }: Pick<Props, 'client' | 'onOpen'>) {
     setError('')
     try {
       const order = await client.upload(file)
-      onOpen(order.id)
+      // An upload takes a minute. If the person has moved on or logged out, it must not pull
+      // them onto another order: it waits in the list.
+      if (mounted.current) {
+        onOpen(order.id)
+      }
     } catch (failure) {
       setError(messageOf(failure))
       setUploading(false)
@@ -39,7 +51,7 @@ function Upload({ client, onOpen }: Pick<Props, 'client' | 'onOpen'>) {
   }
 
   return (
-    <section className="card">
+    <section className="card upload">
       <h2>Upload an order</h2>
       <form onSubmit={submit} className="stack">
         <div className="field-input">
@@ -84,10 +96,16 @@ export function Orders({ client, filter, offset, onFilter, onOffset, onOpen }: P
     let current = true
     client.listOrders(filter, offset).then(
       (loaded) => {
-        if (current) {
-          setPage(loaded)
-          setError('')
+        if (!current) {
+          return
         }
+        // This page emptied, say after its last order was reviewed. The queue itself may not be.
+        if (loaded.items.length === 0 && offset > 0) {
+          onOffset(Math.max(0, offset - PAGE_SIZE))
+          return
+        }
+        setPage(loaded)
+        setError('')
       },
       (failure: unknown) => {
         if (current) {
@@ -98,12 +116,12 @@ export function Orders({ client, filter, offset, onFilter, onOffset, onOpen }: P
     return () => {
       current = false
     }
-  }, [client, filter, offset])
+  }, [client, filter, offset, onOffset])
 
   const lastShown = page ? page.offset + page.items.length : 0
 
   return (
-    <div className="stack">
+    <div className="orders-layout">
       <Upload client={client} onOpen={onOpen} />
 
       <section className="card">
@@ -168,7 +186,7 @@ export function Orders({ client, filter, offset, onFilter, onOffset, onOpen }: P
           </ul>
         )}
 
-        {page && page.total > PAGE_SIZE && (
+        {page && (offset > 0 || page.total > PAGE_SIZE) && (
           <div className="pager">
             <button
               type="button"

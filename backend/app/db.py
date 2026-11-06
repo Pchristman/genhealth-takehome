@@ -20,7 +20,8 @@ def make_engine(url: str) -> Engine:
     if url == "sqlite://":  # in-memory: one shared connection, or each session sees an empty DB
         engine = create_engine(url, connect_args=args, poolclass=StaticPool)
     else:
-        engine = create_engine(url, connect_args=args)
+        # A sync route holds a connection throughout, and up to 40 of them run at once.
+        engine = create_engine(url, connect_args=args, pool_size=50, max_overflow=0)
     event.listen(engine, "connect", _configure_sqlite)
     return engine
 
@@ -32,6 +33,19 @@ def init_db() -> None:
     SQLModel.metadata.create_all(engine)
 
 
+def session_scope(bind: Engine) -> Iterator[Session]:
+    """One session for one request. Closing it is not enough after a failed COMMIT.
+
+    SQLAlchemy would return the connection to the pool with the transaction still open, and the
+    next request to get that connection would inherit, and could commit, the failed rows.
+    """
+    with Session(bind) as session:
+        try:
+            yield session
+        except Exception:
+            session.rollback()
+            raise
+
+
 def get_session() -> Iterator[Session]:
-    with Session(engine) as session:
-        yield session
+    yield from session_scope(engine)

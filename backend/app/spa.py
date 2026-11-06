@@ -16,10 +16,18 @@ from starlette.responses import Response
 from app.config import settings
 
 API_ROOTS = frozenset({"auth", "v1", "docs", "redoc", "openapi.json", "health"})
+REVALIDATE = "no-cache"  # index.html names the bundles, so it must never outlive a deploy
+FOREVER = "public, max-age=31536000, immutable"  # bundle names change whenever their content does
+
+
+def _names_a_file(relative: str) -> bool:
+    """Whether this asks for a file. A browser would run index.html as that file, so it 404s."""
+    parts = relative.lower().split("/")
+    return parts[0] == "assets" or "." in parts[-1]
 
 
 def _static_file(relative: str) -> Path | None:
-    """The file to serve, or None without a build. Anything not inside the build gets index.html."""
+    """The file to serve: a file in the build, index.html for an app path, or None to 404."""
     root = settings.static_dir.resolve()
     index = root / "index.html"
     if not index.is_file():
@@ -30,13 +38,17 @@ def _static_file(relative: str) -> Path | None:
             return target
     except (OSError, ValueError):  # a NUL byte or an over-long name is simply not one of our files
         pass
-    return index
+    return None if _names_a_file(relative) else index
+
+
+def _cache_control(file: Path) -> str:
+    return FOREVER if file.is_relative_to(settings.static_dir.resolve() / "assets") else REVALIDATE
 
 
 async def serve_or_404(request: Request, exc: HTTPException) -> Response:
     relative = request.scope["path"].lstrip("/")
-    if request.method in ("GET", "HEAD") and relative.split("/")[0] not in API_ROOTS:
+    if request.method in ("GET", "HEAD") and relative.split("/")[0].lower() not in API_ROOTS:
         file = _static_file(relative)
         if file is not None:
-            return FileResponse(file)
+            return FileResponse(file, headers={"Cache-Control": _cache_control(file)})
     return await http_exception_handler(request, exc)

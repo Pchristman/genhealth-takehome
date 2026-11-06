@@ -8,6 +8,8 @@ back on a retry.
 
 import base64
 import logging
+import time
+from collections.abc import Callable
 from functools import lru_cache
 from typing import Any
 
@@ -20,9 +22,10 @@ from app.grounding import quote_problems
 
 log = logging.getLogger("app.llm")
 
-MAX_TOKENS = 16000
+MAX_TOKENS = 32000  # thinking counts against this, and a long fax must not be cut off
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 HTTP_RETRIES = 1  # the SDK's own, for 429s and 5xx. Each try can take the whole client timeout.
+MIN_CALL_SECONDS = 30  # with less left than this, a call can't finish and only wastes the money
 OUTPUT_FORMAT = {"type": "json_schema", "schema": anthropic.transform_schema(ExtractionResult)}
 
 SYSTEM_PROMPT = """\
@@ -47,21 +50,25 @@ with its label. Copy it character for character.
 page: the 1-based PDF page, counting from the first page of the file. It is not a printed fax \
 page number, which can differ.
 
-issue: use none when the value is clear. When a value is absent, illegible or ambiguous, set value \
-to null. Use illegible when it is there but cannot be read, ambiguous when the document does not \
-make clear which value is meant, and conflicting when the document gives different values for the \
-field. An absent field has a null value, a null source_quote, a null page and the issue none.
+issue: use none when the value is clear. When a value is absent, illegible, ambiguous or \
+conflicting, set value to null. Use illegible when it is there but cannot be read, and ambiguous \
+when the document does not make clear which value is meant. When the document gives different \
+values for a field, return null with issue conflicting rather than picking one. An absent field \
+has a null value, a null source_quote, a null page and the issue none.
 
-The ordering provider is the prescriber or the person who signed or issued the order. It is not a \
-referring physician, a supplier or a fax sender, whatever the document calls them. Take the NPI \
-only from the ordering provider. If the document does not make clear who that is, use null with \
-the issue ambiguous.
+The ordering provider is the prescriber. If the signer differs from the prescriber, return null \
+with issue ambiguous. The ordering provider is not a referring physician, \
+a supplier or a fax sender, whatever the document calls them. Take the NPI only from the ordering \
+provider. If the document does not make clear who that is, use null with the issue ambiguous.
 
 If the document covers more than one patient, set multiple_patients to true, and use null with \
 the issue ambiguous for the patient fields rather than picking one.
 """
 
 USER_PROMPT = "Extract the order fields from the attached PDF."
+KEEP_THE_VALUE = (
+    "Do not change any value to make a quote match. If a quote cannot match, keep the value."
+)
 SCHEMA_FEEDBACK = "That reply did not match the required schema. Send the complete object again."
 
 
@@ -96,7 +103,7 @@ def build_messages(pdf_bytes: bytes) -> list[dict[str, Any]]:
     ]
 
 
-def call_model(client: Any, messages: list[dict[str, Any]]) -> Any:
+def call_model(client: Any, messages: list[dict[str, Any]], timeout: float) -> Any:
     try:
         return client.beta.messages.create(
             model=settings.llm_model,
@@ -106,6 +113,7 @@ def call_model(client: Any, messages: list[dict[str, Any]]) -> Any:
             output_config={"effort": "high", "format": OUTPUT_FORMAT},
             betas=[FALLBACK_BETA],
             fallbacks="default",
+            timeout=timeout,
         )
     except Exception as exc:
         # An API error can echo the request. The type alone says what happened.
@@ -117,6 +125,8 @@ def check_stop_reason(response: Any) -> None:
         raise LLMError("The model refused.")
     if response.stop_reason == "max_tokens":
         raise LLMError("The reply was cut off at max_tokens.")
+    if response.stop_reason == "model_context_window_exceeded":
+        raise LLMError("The reply was cut off at the context window.")
 
 
 def read_output(response: Any) -> ExtractionResult | None:
@@ -132,33 +142,52 @@ def read_output(response: Any) -> ExtractionResult | None:
 
 
 def extract(
-    pdf_bytes: bytes, pages: list[str], text_pages: set[int], client: Any = None
+    pdf_bytes: bytes,
+    pages: list[str],
+    text_pages: set[int],
+    client: Any = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> ExtractionResult:
-    """Retries schema errors and quotes the model can fix. Never a bad NPI or date, and never an
-    API failure. A result still failing after the last attempt is kept, for decide() to flag."""
+    """Retries schema errors and quotes the model can fix. Never a bad NPI or date.
+
+    Keeps the reply with the fewest quote problems, and on a tie the earlier one, so a retry can't
+    win by changing a value. That reply survives a failed retry or the deadline, for decide() to
+    flag. With no reply to keep, this raises LLMError.
+    """
     client = client if client is not None else get_llm_client()
     if client is None:
         raise LLMError("No API key is configured.")
 
+    deadline = clock() + settings.llm_deadline_seconds
     messages = build_messages(pdf_bytes)
     result = None
+    fewest_problems = 0
     for attempt in range(1, settings.llm_max_attempts + 1):
-        response = call_model(client, messages)
-        log.info("llm_call", extra={"model": response.model, "attempt": attempt})
-        check_stop_reason(response)
+        remaining = deadline - clock()
+        if remaining < MIN_CALL_SECONDS:
+            break
+        try:
+            response = call_model(client, messages, remaining / (HTTP_RETRIES + 1))
+            log.info("llm_call", extra={"model": response.model, "attempt": attempt})
+            check_stop_reason(response)
+        except LLMError:
+            if result is None:
+                raise
+            break
 
         output = read_output(response)
         if output is None:
             feedback = SCHEMA_FEEDBACK
         else:
-            result = output
             problems = quote_problems(output, pages, text_pages)
             if not problems:
                 return output
-            feedback = "\n".join(problems)
+            if result is None or len(problems) < fewest_problems:
+                result, fewest_problems = output, len(problems)
+            feedback = "\n".join([*problems, KEEP_THE_VALUE])
         messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": feedback})
 
     if result is None:
-        raise LLMError(f"No valid output after {settings.llm_max_attempts} attempts.")
+        raise LLMError("No valid output from the model.")
     return result

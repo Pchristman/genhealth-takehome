@@ -7,6 +7,9 @@
 **/*.tsbuildinfo
 .env
 .env.*
+**/.env
+**/.env.*
 .git
 backend/static
 samples
+**/samples

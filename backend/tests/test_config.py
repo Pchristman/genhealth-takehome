@@ -44,6 +44,21 @@ def test_tests_never_see_an_api_key():
     assert not key_is_set
 
 
+def test_signup_code_is_read_from_the_environment(monkeypatch):
+    monkeypatch.setenv("SIGNUP_CODE", "another-test-code")
+    assert Settings(_env_file=None).signup_code == "another-test-code"
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_unset_or_blank_signup_code_means_none(monkeypatch, value):
+    # None closes signup, so a blank line in .env must not open it with an empty code.
+    if value is None:
+        monkeypatch.delenv("SIGNUP_CODE")
+    else:
+        monkeypatch.setenv("SIGNUP_CODE", value)
+    assert Settings(_env_file=None).signup_code is None
+
+
 def test_log_level_is_normalized_to_upper(monkeypatch):
     monkeypatch.setenv("LOG_LEVEL", "debug")
     assert Settings(_env_file=None).log_level == "DEBUG"

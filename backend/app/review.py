@@ -21,8 +21,12 @@ MISSING_FIELDS = "Every field must have a value before approval."
 DOCUMENT_HEADERS = {
     "Content-Disposition": 'inline; filename="order.pdf"',
     "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",  # a patient's PDF must not stay in a browser or proxy cache
 }
-DECISIONS = {"approve": OrderStatus.approved, "deny": OrderStatus.denied}
+DECISIONS = {
+    "approve": (OrderStatus.approved, "order.approve"),
+    "deny": (OrderStatus.denied, "order.deny"),
+}
 
 
 def _claim_for_review(db: Session, order: Order) -> None:
@@ -49,12 +53,13 @@ def review_order(order_id: UUID, body: ReviewIn, who: Auth, db: Db) -> OrderOut:
         raise HTTPException(http_status.HTTP_409_CONFLICT, detail=MISSING_FIELDS)
     _claim_for_review(db, order)
     now = utcnow()
-    order.status = DECISIONS[body.decision]
+    status, action = DECISIONS[body.decision]
+    order.status = status
     order.reviewed_by = who.user_id
     order.reviewed_at = now
     order.updated_at = now
     db.add(order)
-    return _audited_out(db, who, order, "order.review")
+    return _audited_out(db, who, order, action)
 
 
 def _stored_pdf(db: Session, who: Principal, order: Order) -> tuple[str, bytes]:

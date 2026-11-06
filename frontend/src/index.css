@@ -23,6 +23,8 @@
   --grey-bg: #e6e9ee;
   --grey-text: #3f4859;
 
+  --page-width: 72rem;
+
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
 }
@@ -61,6 +63,7 @@
 
 html {
   overflow-x: hidden;
+  scrollbar-gutter: stable; /* a long page and a short one keep the same content position */
 }
 
 body {
@@ -125,7 +128,8 @@ h2:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 0.25rem 1rem;
-  padding: 0.75rem 1rem;
+  /* Lines the bar's content up with the page below it on a wide screen. */
+  padding: 0.75rem max(1rem, calc((100% - var(--page-width)) / 2 + 1rem));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -140,7 +144,7 @@ h2:focus-visible {
 
 .page {
   width: 100%;
-  max-width: 56rem;
+  max-width: var(--page-width);
   margin: 0 auto;
   padding: 1rem;
 }
@@ -489,4 +493,72 @@ blockquote {
 
 .flag-resolved > span:first-child {
   text-decoration: line-through;
+}
+
+.upload form {
+  margin-top: 0.75rem;
+}
+
+.orders-layout,
+.detail {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.orders-layout > *,
+.detail > * {
+  min-width: 0;
+}
+
+/* Desktop: the upload sits beside the list, and the review panel stays beside the fields, so the
+   flags and Approve are in view together. Phones keep one column in document order. */
+@media (min-width: 64rem) {
+  .narrow {
+    margin-top: 4rem;
+  }
+
+  .orders-layout {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    align-items: start;
+  }
+
+  .orders-layout > .upload {
+    grid-area: 1 / 2;
+  }
+
+  .detail.with-review {
+    grid-template-columns: minmax(0, 1fr) 24rem;
+    align-items: start;
+  }
+
+  .review-panel {
+    grid-area: 1 / 2;
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+  }
+
+  /* Five cards: pairs with the date of birth between them, so patient and provider read as rows. */
+  .with-review .fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .with-review .field-card:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+
+  /* No review panel: three patient cards above two provider cards. */
+  .detail:not(.with-review) .fields {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .detail:not(.with-review) .field-card {
+    grid-column: span 2;
+  }
+
+  .detail:not(.with-review) .field-card:nth-child(n + 4) {
+    grid-column: span 3;
+  }
 }
