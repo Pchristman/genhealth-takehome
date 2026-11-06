@@ -1,9 +1,11 @@
+import re
 from datetime import UTC, date, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, StringConstraints
 
-from app.models import OrderSource, OrderStatus
+from app.models import OrderSource, OrderStatus, utcnow
+from app.validators import check_dob, is_valid_npi
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -16,6 +18,31 @@ def _as_utc(value: datetime) -> datetime:
 UtcDatetime = Annotated[datetime, AfterValidator(_as_utc)]
 
 
+# A person can fix a typo on the spot, unlike a fax, so these refuse rather than flag. The messages
+# name no value: the 422 handler hides them anyway, but they could reach a log.
+def _valid_npi(value: str) -> str:
+    if not is_valid_npi(value):
+        raise ValueError("Not a valid NPI.")
+    return value
+
+
+def _date_string(value: Any) -> Any:
+    # Pydantic alone reads numbers, and numeric strings, as timestamps: 0 becomes 1970-01-01.
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+        raise ValueError("Must be a YYYY-MM-DD string.")
+    return value
+
+
+def _plausible_dob(value: date) -> date:
+    if check_dob(value, utcnow().date()) is not None:
+        raise ValueError("Not a plausible date of birth.")
+    return value
+
+
+Npi = Annotated[Text, AfterValidator(_valid_npi)]
+Dob = Annotated[date, BeforeValidator(_date_string), AfterValidator(_plausible_dob)]
+
+
 class OrderIn(BaseModel):
     """extra="forbid" is what stops a client setting status or owner."""
 
@@ -23,9 +50,9 @@ class OrderIn(BaseModel):
 
     patient_first_name: Text
     patient_last_name: Text
-    patient_dob: date
+    patient_dob: Dob
     provider_name: Text
-    provider_npi: Text
+    provider_npi: Npi
 
 
 class OrderPatch(BaseModel):
@@ -36,9 +63,9 @@ class OrderPatch(BaseModel):
 
     patient_first_name: Text = None
     patient_last_name: Text = None
-    patient_dob: date = None
+    patient_dob: Dob = None
     provider_name: Text = None
-    provider_npi: Text = None
+    provider_npi: Npi = None
 
 
 class EvidenceOut(BaseModel):
