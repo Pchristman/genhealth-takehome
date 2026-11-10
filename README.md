@@ -119,8 +119,8 @@ The response is the Order, with `evidence` (value, quote, page and verification 
 | `POST /v1/orders` | Create an order by hand |
 | `POST /v1/orders/upload` | Upload a PDF in multipart field `file`, returns 201 with the Order |
 | `GET /v1/orders/{id}` | Read an order with its evidence and flags |
-| `PATCH /v1/orders/{id}` | Edit an order. It returns to `needs_review` |
-| `DELETE /v1/orders/{id}` | Soft delete. Reads return 404 and the PDF bytes are cleared |
+| `PATCH /v1/orders/{id}` | Edit an order that needs review. Approved and denied orders return 409 |
+| `DELETE /v1/orders/{id}` | Soft delete. Reads return 404 and the PDF bytes are cleared. Approved orders return 409 |
 | `POST /v1/orders/{id}/review` | `{"decision": "approve"}` or `{"decision": "deny"}`, person only |
 | `GET /v1/orders/{id}/document` | The original PDF |
 | `GET /health` | Liveness |
@@ -136,6 +136,7 @@ Covered by the test suite, with a stub in place of the model:
 - Extraction of the five fields, each with a source quote and PDF page number.
 - Checks before saving: NPI (10 digits, starting with 1 or 2, passing Luhn), date of birth (not in the future, at most 120 years old), missing values, placeholders such as repeated-character names, and quotes against the page's text layer.
 - Code sets the status. `approved` needs all five fields present, verified and free of flags. Anything else is `needs_review`, with the value kept as printed and a flag. Only a person can deny.
+- An approved order is final. It can't be edited, reopened or deleted, and who approved it never changes.
 - Isolation by `owner_id`. Another user's order returns 404, the same as one that doesn't exist.
 - An audit row, ids only, for every read or change of a patient record.
 - Logs built from a field allowlist, with no document text, model output or patient fields.
@@ -193,6 +194,18 @@ The spec has the full list, with the alternatives I rejected. These matter most:
 I built this with Claude Code. I started with a brainstorm that became the spec, then the plan, and I approved each before work moved on. Agents implemented the tasks in parallel git worktrees. An adversarial review agent then checked each task, and separate agents fixed what it found. I reviewed the findings, chose what to fix, and made the scope calls, such as scoping by user rather than by org.
 
 The reviews caught real defects. In one, a value and quote truncated together (`2/17/1961` read from `12/17/1961`) passed the check and gave a false approval. In another, a tiny PDF could exhaust memory when parsed. The agents also made mistakes, which are listed below.
+
+## Changes since submission
+
+### Approved orders are final (2026-11-10)
+
+**Before:** editing an approved order sent it back to `needs_review` and erased who approved it, and an approved order could be deleted.
+
+**Now:** `PATCH` and `DELETE` on an approved order return 409. This holds whether code approved it on upload or a person approved it. Who approved it and when (`reviewed_by`/`reviewed_at`, both empty for a code approval) never changes. A wrong value on an approved order means creating a new order.
+
+**Why:** an approval is what downstream use relies on, so it has to stay a fixed record.
+
+**Verified:** `backend/tests/test_final_orders.py` and the rewritten tests pass in the full suite, and the detail page was checked by hand. This change is not deployed yet. "What I checked on the live service" describes `9077cf9`, which predates it.
 
 ## Corrections
 

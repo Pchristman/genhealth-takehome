@@ -195,15 +195,18 @@ function OpenFlags({ flags }: { flags: Flag[] }) {
   )
 }
 
+const FINAL_NOTE = " This order is final and can't be changed."
+
 function reviewNote(order: Order): string {
   if (order.status === 'needs_review') {
     return ''
   }
+  const final = order.status === 'approved' ? FINAL_NOTE : ''
   if (!order.reviewed_at) {
-    return 'Approved automatically: every value was verified against the PDF text.'
+    return `Approved automatically: every value was verified against the PDF text.${final}`
   }
   const when = new Date(order.reviewed_at).toLocaleString()
-  return `${STATUS_LABELS[order.status]} by a person on ${when}.`
+  return `${STATUS_LABELS[order.status]} by a person on ${when}.${final}`
 }
 
 export function OrderDetail({ client, orderId, onBack }: Props) {
