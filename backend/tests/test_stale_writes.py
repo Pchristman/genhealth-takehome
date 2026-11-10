@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 
 from app import orders
 from app.models import AuditEvent, Document, Order, OrderStatus
+from app.orders import APPROVED_NOT_EDITABLE
 from tests.test_orders import ORDER, attach_document, create_order, set_status
 
 REVIEWER = "reviewer-id"
@@ -115,8 +116,10 @@ def test_a_stale_write_leaves_the_connection_clean(client, engine, auth_headers,
 
     retried = client.patch(url, json=PATCH, headers=headers)
 
-    assert retried.status_code == 200
-    assert retried.json()["status"] == "needs_review"
+    # A poisoned session would repeat the stale-write message. A clean one reads the approval.
+    assert retried.status_code == 409
+    assert retried.json() == {"detail": APPROVED_NOT_EDITABLE}
+    assert stored(engine, order_id).status == OrderStatus.approved
 
 
 def test_version_starts_at_one_and_moves_with_each_write(client, engine, auth_headers):
