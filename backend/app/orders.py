@@ -25,6 +25,8 @@ router = APIRouter(prefix="/v1/orders", tags=["orders"])
 
 MAX_LIMIT = 100
 MAX_OFFSET = 2**63 - 1  # SQLite's integer limit; past it the query would fail with a 500
+APPROVED_NOT_EDITABLE = "An approved Order is final and can't be edited."
+DENIED_NOT_EDITABLE = "A denied Order can't be edited."
 
 
 def get_order(db: Session, who: Principal, order_id: str) -> Order:
@@ -162,8 +164,10 @@ def _record_corrections(db: Session, who: Principal, order: Order, fields: set[s
 @router.patch("/{order_id}")
 def update_order(order_id: UUID, body: OrderPatch, who: Auth, db: Db) -> OrderOut:
     order = get_order(db, who, str(order_id))
+    if order.status == OrderStatus.approved:
+        raise HTTPException(http_status.HTTP_409_CONFLICT, detail=APPROVED_NOT_EDITABLE)
     if order.status == OrderStatus.denied:
-        raise HTTPException(http_status.HTTP_409_CONFLICT, detail="A denied Order can't be edited.")
+        raise HTTPException(http_status.HTTP_409_CONFLICT, detail=DENIED_NOT_EDITABLE)
     changes = {
         field: value
         for field, value in body.model_dump(exclude_unset=True).items()
@@ -173,11 +177,6 @@ def update_order(order_id: UUID, body: OrderPatch, who: Auth, db: Db) -> OrderOu
         return _audited_out(db, who, order, "order.read")
     for field, value in changes.items():
         setattr(order, field, value)
-    if order.status == OrderStatus.approved:
-        # The approval covered the old values, so it goes with them.
-        order.status = OrderStatus.needs_review
-        order.reviewed_by = None
-        order.reviewed_at = None
     order.updated_at = utcnow()
     db.add(order)
     _record_corrections(db, who, order, body.model_fields_set)

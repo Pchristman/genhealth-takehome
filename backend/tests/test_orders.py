@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from app.models import Document, FieldEvidence, Order, OrderStatus, ReviewFlag
+from app.orders import APPROVED_NOT_EDITABLE
 
 ORDER = {
     "patient_first_name": "Zephyrine",
@@ -161,20 +162,23 @@ def test_list_rejects_bad_paging_and_status(client, auth_headers, params):
     assert client.get("/v1/orders", params=params, headers=auth_headers()).status_code == 422
 
 
-def test_patch_on_approved_returns_to_needs_review(client, db, auth_headers):
+def test_patch_on_approved_is_refused_and_the_approval_stands(client, db, auth_headers):
     headers = auth_headers()
     order = create_order(client, headers)
     set_status(db, order["id"], OrderStatus.approved, reviewed_by="reviewer-id")
+    path = f"/v1/orders/{order['id']}"
+    before = client.get(path, headers=headers).json()
 
-    response = client.patch(
-        f"/v1/orders/{order['id']}", json={"provider_name": "Ione Vantongeren DO"}, headers=headers
-    )
+    response = client.patch(path, json={"provider_name": "Ione Vantongeren DO"}, headers=headers)
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "needs_review"
-    # The approval was for the old values, so its stamp must not outlive them.
-    assert response.json()["reviewed_by"] is None
-    assert response.json()["reviewed_at"] is None
+    assert response.status_code == 409
+    assert response.json() == {"detail": APPROVED_NOT_EDITABLE}
+    # An approval is a fixed record: who approved it, when, and what it covered all stay.
+    after = client.get(path, headers=headers).json()
+    assert after["status"] == "approved"
+    assert after["reviewed_by"] == "reviewer-id"
+    assert after["reviewed_at"] == before["reviewed_at"]
+    assert after["provider_name"] == ORDER["provider_name"]
 
 
 @pytest.mark.parametrize(
@@ -208,26 +212,24 @@ def test_patch_on_denied_returns_409_and_the_denial_stands(client, db, auth_head
 def test_patch_with_no_real_change_leaves_the_order_alone(client, db, auth_headers, same):
     headers = auth_headers()
     order = create_order(client, headers)
-    set_status(db, order["id"], OrderStatus.approved, reviewed_by="reviewer-id")
     path = f"/v1/orders/{order['id']}"
     before = client.get(path, headers=headers).json()
 
     response = client.patch(path, json=same, headers=headers)
 
     assert response.status_code == 200
-    assert response.json() == before  # still approved, same reviewer, same updated_at
+    assert response.json() == before  # same status, same updated_at
 
 
-def test_patch_changing_one_of_several_values_counts_as_a_change(client, db, auth_headers):
+def test_patch_changing_one_of_several_values_counts_as_a_change(client, auth_headers):
     headers = auth_headers()
     order = create_order(client, headers)
-    set_status(db, order["id"], OrderStatus.approved, reviewed_by="reviewer-id")
 
     response = client.patch(
         f"/v1/orders/{order['id']}", json={**ORDER, "provider_npi": "1245319599"}, headers=headers
     )
 
-    assert response.json()["status"] == "needs_review"
+    assert response.json()["provider_npi"] == "1245319599"
     assert response.json()["updated_at"] > order["updated_at"]
 
 
