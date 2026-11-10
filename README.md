@@ -145,7 +145,7 @@ The React frontend lists, uploads, edits and reviews orders, and opens the sourc
 
 ## What I checked on the live service
 
-The final deployed commit is `9077cf9`. It matched `main` when deployed, and CI passed on it.
+At submission the deployed commit was `9077cf9`. It matched `main` when deployed, and CI passed on it. The checks below are from that version. The approved-orders change was deployed later, at `cc2cab4`, and "Changes since submission" lists what was checked for it.
 
 GenHealth's sample, by API and through the UI: it picked the prescriber over the referring physician, kept the NPI as printed and flagged it, flagged the DOB, marked every quote `unverified`, and sent the Order to `needs_review`. A second user got a 404. CRUD, the refusals (non-PDF, over 20 MB, bad token) and six uploads at once also worked there.
 
@@ -205,7 +205,9 @@ The reviews caught real defects. In one, a value and quote truncated together (`
 
 **Why:** an approval is what downstream use relies on, so it has to stay a fixed record.
 
-**Verified:** `backend/tests/test_final_orders.py` and the rewritten tests pass in the full suite, and the detail page was checked by hand. This change is not deployed yet. "What I checked on the live service" describes `9077cf9`, which predates it.
+**Verified:** `backend/tests/test_final_orders.py` and the rewritten tests pass in the full suite (911 tests), and CI passed on `cc2cab4`. On a local server I checked the detail page by hand: a person-approved order and a code-approved order both show the final note with no Edit controls, and saving a stale edit after another client approved the order shows the 409 and reloads the approved view. The code-approved order was simulated in a local database, because there was no Anthropic key for a real upload. The backend tests cover the real upload path.
+
+**Deployed:** `cc2cab4` on 2026-11-10. On the live service, `/health` returns 200, the served frontend contains the final note, and edits and deletes without a token still return 401. Checking the 409 on a live approved order needs a logged-in account, so that check is by hand with your own login.
 
 ## Corrections
 

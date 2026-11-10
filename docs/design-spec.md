@@ -110,7 +110,7 @@ Nothing here blocks work. Every item has a working assumption.
 | A15 | Manual create or edit with a bad value | 422. A person can correct it on the spot, unlike a fax. Person-entered orders start as `needs_review`. |
 | A16 | Edits to an approved Order | ~~Status returns to `needs_review`.~~ Superseded 2026-11-10 by A16a. |
 | A16a | Edits to, or deletion of, an approved Order (amended 2026-11-10) | 409. Approved is final, whether code or a person approved it. Who approved it and when never changes. See §7. |
-| A17 | Delete | Soft delete. Reads return 404 and the PDF bytes are cleared. Audit rows stay. |
+| A17 | Delete | Soft delete. Reads return 404 and the PDF bytes are cleared. Audit rows stay. An approved Order can't be deleted (A16a). |
 | A18 | Separation of duties | Not enforced. The owner can review their own order. Listed as a production gap. |
 | A19 | Limits | 20 MB, 100 pages, 20 uploads per user per day, 100 per day overall. 20 MB keeps the base64 request under the API's 32 MB limit. |
 | A20 | Update verb | `PATCH` only. |

@@ -18,6 +18,5 @@ samples/
 .superpowers/
 backend/static/
 
-# Agent worktrees and execution scratch
+# Agent worktrees
 .claude/worktrees/
-.superpowers/
