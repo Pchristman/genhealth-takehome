@@ -108,7 +108,8 @@ Nothing here blocks work. Every item has a working assumption.
 | A13 | Non-order or unreadable PDF | Order saved with null fields and `missing` flags. It is never rejected for looking unusual. |
 | A14 | Model call fails | Order saved as `needs_review` with an `extraction_failed` flag. The PDF is kept, so the fax isn't lost. |
 | A15 | Manual create or edit with a bad value | 422. A person can correct it on the spot, unlike a fax. Person-entered orders start as `needs_review`. |
-| A16 | Edits to an approved Order | Status returns to `needs_review`. |
+| A16 | Edits to an approved Order | ~~Status returns to `needs_review`.~~ Superseded 2026-11-10 by A16a. |
+| A16a | Edits to, or deletion of, an approved Order (amended 2026-11-10) | 409. Approved is final, whether code or a person approved it. Who approved it and when never changes. See §7. |
 | A17 | Delete | Soft delete. Reads return 404 and the PDF bytes are cleared. Audit rows stay. |
 | A18 | Separation of duties | Not enforced. The owner can review their own order. Listed as a production gap. |
 | A19 | Limits | 20 MB, 100 pages, 20 uploads per user per day, 100 per day overall. 20 MB keeps the base64 request under the API's 32 MB limit. |
@@ -186,7 +187,7 @@ Timestamps are UTC. Ids are UUIDs.
 | --- | --- |
 | `POST /auth/register`, `POST /auth/token` | Sign up, log in |
 | `GET /v1/orders` (paged, status filter), `POST /v1/orders` | List own orders, manual create |
-| `GET`, `PATCH`, `DELETE /v1/orders/{id}` | Read with evidence and flags, edit, soft delete |
+| `GET`, `PATCH`, `DELETE /v1/orders/{id}` | Read with evidence and flags, edit, soft delete. PATCH and DELETE refuse an approved Order (A16a) |
 | `POST /v1/orders/upload` | Upload a PDF, returns 201 with the Order |
 | `POST /v1/orders/{id}/review` | `{"decision": "approve"}` or `"deny"`, person only, audited as `order.approve` or `order.deny` |
 | `GET /v1/orders/{id}/document` | Original PDF |
@@ -194,7 +195,7 @@ Timestamps are UTC. Ids are UUIDs.
 
 `POST /auth/register` requires a signup code.
 
-Errors: 401 no token, 403 wrong signup code, 404 not the caller's, 409 stale write or denied Order, 413 too big, 415 not a PDF, 422 unreadable or invalid, 429 over quota.
+Errors: 401 no token, 403 wrong signup code, 404 not the caller's, 409 stale write, denied Order, or approved Order (A16a), 413 too big, 415 not a PDF, 422 unreadable or invalid, 429 over quota.
 
 ### Running locally
 The app behaves the same locally and deployed. Only environment variables differ, and every setting has a local default except the Anthropic key and the JWT secret, which come from `.env`.
@@ -244,3 +245,9 @@ In order.
 | 12:30 | Review pass done, chosen fixes are in | Fix only security and correctness blockers |
 | 12:45 | README done, clean clone verified | Submit what passes |
 | 12:55 | Email sent | |
+
+## 7. Amendments after delivery
+
+| Date | Area | Before | After | Why | Detail |
+| --- | --- | --- | --- | --- | --- |
+| 2026-11-10 | Approved Orders | An edit set the Order back to `needs_review` and cleared `reviewed_by`/`reviewed_at`. An approved Order could be deleted. | `approved` is final. PATCH and DELETE return 409, and nothing changes, including who approved it. | Downstream consumers act on an approval, so the approved record must not change after the fact. | [spec](superpowers/specs/2026-11-10-approved-orders-final-design.md), [plan](superpowers/plans/2026-11-10-approved-orders-final.md) |

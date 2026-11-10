@@ -39,6 +39,10 @@ Inputs the spec implies but doesn't name. Each has a test in the owning task.
 
 **Approving with open flags (Task 5).** A person may approve an Order that still has flags, because a bad NPI printed on the fax may have no fix. All five fields must be non-null, otherwise 409. Flags stay on record. Only `needs_review` Orders can be reviewed, otherwise 409.
 
+## Amendment after delivery (2026-11-10)
+
+**Approved Orders are final (A16a).** PATCH and DELETE on an approved Order return 409 and change nothing, whether code or a person approved it. This replaces A16, where an edit sent an approved Order back to `needs_review`. Four tests that encoded the old rule were rewritten. See [the amendment plan](superpowers/plans/2026-11-10-approved-orders-final.md) for the tasks and tests.
+
 ---
 
 ## Task 1: Deployed skeleton with auth (target 10:50)
@@ -107,7 +111,7 @@ Task 3 adds real NPI and date checks. In this task `OrderIn` enforces presence a
 - `test_create_order_starts_needs_review`: 201, `source == "manual"`
 - `test_get_update_delete_round_trip`
 - `test_list_is_paged_and_filters_by_status`: `limit` capped at 100, stable order
-- `test_patch_on_approved_returns_to_needs_review`
+- ~~`test_patch_on_approved_returns_to_needs_review`~~ superseded 2026-11-10 by `test_patch_on_approved_is_refused_and_the_approval_stands` (A16a)
 - `test_deleted_order_returns_404_and_clears_pdf_bytes`
 - `test_patch_cannot_set_status_or_owner`: extra fields return 422
 - `test_other_user_gets_404_on_get_patch_delete`
