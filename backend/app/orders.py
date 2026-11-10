@@ -26,6 +26,7 @@ router = APIRouter(prefix="/v1/orders", tags=["orders"])
 MAX_LIMIT = 100
 MAX_OFFSET = 2**63 - 1  # SQLite's integer limit; past it the query would fail with a 500
 APPROVED_NOT_EDITABLE = "An approved Order is final and can't be edited."
+APPROVED_NOT_DELETABLE = "An approved Order is final and can't be deleted."
 DENIED_NOT_EDITABLE = "A denied Order can't be edited."
 
 
@@ -186,6 +187,8 @@ def update_order(order_id: UUID, body: OrderPatch, who: Auth, db: Db) -> OrderOu
 @router.delete("/{order_id}", status_code=http_status.HTTP_204_NO_CONTENT)
 def delete_order(order_id: UUID, who: Auth, db: Db) -> None:
     order = get_order(db, who, str(order_id))
+    if order.status == OrderStatus.approved:
+        raise HTTPException(http_status.HTTP_409_CONFLICT, detail=APPROVED_NOT_DELETABLE)
     now = utcnow()
     order.deleted_at = now
     order.updated_at = now
