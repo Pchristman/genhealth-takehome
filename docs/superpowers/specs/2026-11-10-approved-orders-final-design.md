@@ -84,8 +84,11 @@ A refused PATCH or DELETE leaves both fields unchanged. A code approval is never
 
 **Docs**
 
-- `docs/design-spec.md`: A16 becomes "Edits to, or deletion of, an approved Order: 409. Approved is final." Update the 409 line in the errors list.
-- `README.md`: update the `PATCH` row ("It returns to `needs_review`"), add that `DELETE` refuses approved Orders, and update the 409 line.
+The original spec and plan were approved as delivered, so they are amended, not rewritten. The old text stays, marked as superseded, beside the new rule.
+
+- `docs/design-spec.md`: strike A16's old outcome and mark it superseded by a new A16a ("Edits to, or deletion of, an approved Order: 409. Approved is final."). Point the API row and the 409 errors line to A16a. Add a §7 "Amendments after delivery" table that gives the before, the after, why, and links to this spec and its plan.
+- `docs/implementation-plan.md`: strike the `test_patch_on_approved_returns_to_needs_review` bullet and note its replacement. Add an "Amendment after delivery" section.
+- `README.md`: the reference rows (`PATCH`, `DELETE`, "What works") describe the new behaviour. A dated "Changes since submission" section gives the before and after, why, and what verified it. It doesn't claim live verification until the change is deployed and checked.
 
 ## Testing
 
@@ -133,7 +136,7 @@ New tests go in `backend/tests/test_final_orders.py`. Each is written first and 
 
 ### Existing tests changed because they encode the old rule
 
-- `test_orders.py::test_patch_on_approved_returns_to_needs_review`: removed, replaced by test 1.
+- `test_orders.py::test_patch_on_approved_returns_to_needs_review`: rewritten in place as `test_patch_on_approved_is_refused_and_the_approval_stands`. It asserts 409 and that status, `reviewed_by`, `reviewed_at` and the value are unchanged, next to the existing denied-Order test.
 - `test_orders.py::test_patch_with_no_real_change_leaves_the_order_alone`: same cases, on a `needs_review` Order.
 - `test_orders.py::test_patch_changing_one_of_several_values_counts_as_a_change`: on a `needs_review` Order. Asserts the value changed and `updated_at` moved.
 - `test_stale_writes.py::test_a_stale_write_leaves_the_connection_clean`: the retry now gets 409 with the edit message. That still shows the session recovered, because the retry read the committed approval.
